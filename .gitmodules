@@ -1,3 +1,0 @@
-[submodule "deps/opus"]
-	path = deps/opus
-	url = git://git.opus-codec.org/opus.git

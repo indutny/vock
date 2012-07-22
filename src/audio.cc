@@ -41,7 +41,11 @@ static Persistent<String> ondata_sym;
       }\
     }
 
-Audio::Audio(Float64 rate) : in_unit_(NULL), out_unit_(NULL) {
+Audio::Audio(Float64 rate) : rate_(rate),
+                             in_unit_(NULL),
+                             out_unit_(NULL),
+                             in_circle_(10 * 1024),
+                             out_circle_(10 * 1024) {
   // Initialize description
   memset(&desc_, 0, sizeof(desc_));
   desc_.mSampleRate = rate;
@@ -60,13 +64,6 @@ Audio::Audio(Float64 rate) : in_unit_(NULL), out_unit_(NULL) {
   in_unit_ = CreateAudioUnit(true);
   out_unit_ = CreateAudioUnit(false);
 
-  // Setup buffer list
-  buffer_list_.mNumberBuffers = 1;
-  buffer_list_.mBuffers[0].mNumberChannels = 1;
-  buffer_list_.mBuffers[0].mDataByteSize = rate * desc_.mBytesPerFrame; // 1sec
-  buffer_list_.mBuffers[0].mData =
-      new char[buffer_list_.mBuffers[0].mDataByteSize];
-
   // Setup async callbacks
   if (uv_async_init(uv_default_loop(), &in_async_, InputAsyncCallback)) {
     abort();
@@ -77,7 +74,6 @@ Audio::Audio(Float64 rate) : in_unit_(NULL), out_unit_(NULL) {
 Audio::~Audio() {
   AudioUnitUninitialize(in_unit_);
   AudioUnitUninitialize(out_unit_);
-  delete[] reinterpret_cast<char*>(buffer_list_.mBuffers[0].mData);
 }
 
 
@@ -249,13 +245,19 @@ OSStatus Audio::InputCallback(void* arg,
                               AudioBufferList* data) {
   Audio* a = reinterpret_cast<Audio*>(arg);
 
+  // Setup buffer list
+  AudioBufferList list;
+  list.mNumberBuffers = 1;
+  list.mBuffers[0].mNumberChannels = 1;
+  list.mBuffers[0].mDataByteSize = a->rate_ * a->desc_.mBytesPerFrame; // 1sec
+  list.mBuffers[0].mData = NULL;
   // Write received data to buffer list
   if (AudioUnitRender(a->in_unit_,
                       flags,
                       ts,
                       bus,
                       frame_count,
-                      &a->buffer_list_)) {
+                      &list)) {
     abort();
   }
 

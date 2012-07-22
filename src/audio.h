@@ -3,6 +3,7 @@
 
 #include "node.h"
 #include "node_object_wrap.h"
+#include "circle.h"
 
 #include <AudioUnit/AudioUnit.h>
 
@@ -43,10 +44,12 @@ class Audio : public ObjectWrap {
   static const int kInputBus = 1;
   static const int kOutputBus = 0;
 
+  Float64 rate_;
   AudioStreamBasicDescription desc_;
   AudioUnit in_unit_;
   AudioUnit out_unit_;
-  AudioBufferList buffer_list_;
+  Circle in_circle_;
+  Circle out_circle_;
 
   uv_async_t in_async_;
 };

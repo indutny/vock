@@ -172,7 +172,7 @@
             "opus/silk/fixed/pitch_analysis_core_FIX.c",
             "opus/silk/fixed/vector_ops_FIX.c",
             "opus/silk/fixed/schur64_FIX.c",
-            "opus/silk/fixed/schur_FIX",
+            "opus/silk/fixed/schur_FIX.c",
           ]
         }],
         ["opus_build_type=='float'", {
@@ -208,7 +208,7 @@
             "opus/silk/float/scale_copy_vector_FLP.c",
             "opus/silk/float/scale_vector_FLP.c",
             "opus/silk/float/schur_FLP.c",
-            "opus/silk/float/sort_FLP",
+            "opus/silk/float/sort_FLP.c",
           ]
         }]
       ]

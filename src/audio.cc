@@ -33,19 +33,16 @@ static Persistent<String> onoutcoming;
 
 #define CHECK(op, msg)\
     {\
-      OSStatus st;\
+      OSStatus st = 0;\
       if ((st = op)) {\
         char err[1024];\
         snprintf(err, sizeof(err), "%s - %d", msg, st);\
         ThrowException(String::New(err));\
-        return;\
+        return NULL;\
       }\
     }
 
-Audio::Audio(Float64 rate) : unit_(NULL) {
-  UInt32 enable = 1;
-  UInt32 disable = 0;
-
+Audio::Audio(Float64 rate) : in_unit_(NULL), out_unit_(NULL) {
   // Initialize description
   memset(&desc_, 0, sizeof(desc_));
   desc_.mSampleRate = rate;
@@ -59,6 +56,21 @@ Audio::Audio(Float64 rate) : unit_(NULL) {
   desc_.mBytesPerPacket = 2;
   desc_.mBytesPerFrame = 2;
   desc_.mReserved = 0;
+
+  in_unit_ = CreateAudioUnit(true);
+  out_unit_ = CreateAudioUnit(false);
+}
+
+
+Audio::~Audio() {
+  AudioUnitUninitialize(in_unit_);
+  AudioUnitUninitialize(out_unit_);
+}
+
+
+AudioUnit Audio::CreateAudioUnit(bool is_input) {
+  UInt32 enable = 1;
+  UInt32 disable = 0;
 
   // Initialize Unit
   AudioComponentDescription au_desc;
@@ -74,7 +86,7 @@ Audio::Audio(Float64 rate) : unit_(NULL) {
   au_component = AudioComponentFindNext(NULL, &au_desc);
   if (au_component == NULL) {
     ThrowException(String::New("AudioComponentFindNext() failed"));
-    return;
+    return NULL;
   }
 
   CHECK(AudioComponentInstanceNew(au_component, &unit),
@@ -105,25 +117,27 @@ Audio::Audio(Float64 rate) : unit_(NULL) {
   // Setup callbacks
   AURenderCallbackStruct callback;
 
-  callback.inputProc = InputCallback;
-  callback.inputProcRefCon = this;
-  CHECK(AudioUnitSetProperty(unit,
-                             kAudioOutputUnitProperty_SetInputCallback,
-                             kAudioUnitScope_Global,
-                             kInputBus,
-                             &callback,
-                             sizeof(callback)),
-        "Input: set callback failed")
-
-  callback.inputProc = OutputCallback;
-  callback.inputProcRefCon = this;
-  CHECK(AudioUnitSetProperty(unit,
-                             kAudioUnitProperty_SetRenderCallback,
-                             kAudioUnitScope_Global,
-                             kOutputBus,
-                             &callback,
-                             sizeof(callback)),
-        "Output: set callback failed")
+  if (is_input) {
+    callback.inputProc = InputCallback;
+    callback.inputProcRefCon = this;
+    CHECK(AudioUnitSetProperty(unit,
+                               kAudioOutputUnitProperty_SetInputCallback,
+                               kAudioUnitScope_Global,
+                               kInputBus,
+                               &callback,
+                               sizeof(callback)),
+          "Input: set callback failed")
+  } else {
+    callback.inputProc = OutputCallback;
+    callback.inputProcRefCon = this;
+    CHECK(AudioUnitSetProperty(unit,
+                               kAudioUnitProperty_SetRenderCallback,
+                               kAudioUnitScope_Global,
+                               kOutputBus,
+                               &callback,
+                               sizeof(callback)),
+          "Output: set callback failed")
+  }
 
   CHECK(AudioUnitInitialize(unit), "AudioUnitInitialized() failed")
 
@@ -132,23 +146,35 @@ Audio::Audio(Float64 rate) : unit_(NULL) {
                              kAudioOutputUnitProperty_EnableIO,
                              kAudioUnitScope_Input,
                              kInputBus,
-                             &enable,
+                             is_input ? &enable : &disable,
                              sizeof(enable)),
         "Input: EnableIO failed")
   CHECK(AudioUnitSetProperty(unit,
                              kAudioOutputUnitProperty_EnableIO,
                              kAudioUnitScope_Output,
                              kOutputBus,
-                             &enable,
+                             is_input ? &disable : &enable,
                              sizeof(enable)),
        "Output: EnableIO failed")
 
-  unit_ = unit;
-}
+  if (is_input) {
+    // Set input device
+    UInt32 input_size = sizeof(AudioDeviceID);
+    AudioDeviceID input;
+    CHECK(AudioHardwareGetProperty(kAudioHardwarePropertyDefaultInputDevice,
+                                   &input_size,
+                                   &input),
+          "Failed to get input device")
+    CHECK(AudioUnitSetProperty(unit,
+                               kAudioOutputUnitProperty_CurrentDevice,
+                               kAudioUnitScope_Global,
+                               kOutputBus,
+                               &input,
+                               sizeof(input)),
+          "Failed to set input device")
+  }
 
-
-Audio::~Audio() {
-  AudioUnitUninitialize(unit_);
+  return unit;
 }
 
 
@@ -174,7 +200,8 @@ Handle<Value> Audio::Start(const Arguments& args) {
 
   OSStatus st;
 
-  st = AudioOutputUnitStart(a->unit_);
+  st = AudioOutputUnitStart(a->in_unit_);
+  st = AudioOutputUnitStart(a->out_unit_);
   if (st) {
     return scope.Close(ThrowException(String::New(
         "Failed to start unit!")));
@@ -190,7 +217,8 @@ Handle<Value> Audio::Stop(const Arguments& args) {
 
   OSStatus st;
 
-  st = AudioOutputUnitStop(a->unit_);
+  st = AudioOutputUnitStop(a->in_unit_);
+  st = AudioOutputUnitStop(a->out_unit_);
   if (st) {
     return scope.Close(ThrowException(String::New(
         "Failed to stop unit!")));
@@ -219,7 +247,7 @@ OSStatus Audio::OutputCallback(void* arg,
                                AudioBufferList* data) {
   fprintf(stdout, "output\n");
   for (UInt32 i = 0; i < data->mNumberBuffers; i++) {
-    memset(data->mBuffers[i].mData, 255, data->mBuffers[i].mDataByteSize);
+//    memset(data->mBuffers[i].mData, 255, data->mBuffers[i].mDataByteSize);
   }
   return 0;
 }

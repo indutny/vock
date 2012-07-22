@@ -16,6 +16,8 @@ class Audio : public ObjectWrap {
   Audio(Float64 rate);
   ~Audio();
 
+  AudioUnit CreateAudioUnit(bool is_input);
+
   static void Init(v8::Handle<v8::Object> target);
 
   static v8::Handle<v8::Value> New(const v8::Arguments& arg);
@@ -40,7 +42,8 @@ class Audio : public ObjectWrap {
   static const int kOutputBus = 0;
 
   AudioStreamBasicDescription desc_;
-  AudioUnit unit_;
+  AudioUnit in_unit_;
+  AudioUnit out_unit_;
 };
 
 } // namespace audio

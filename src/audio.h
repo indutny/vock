@@ -4,86 +4,43 @@
 #include "node.h"
 #include "node_object_wrap.h"
 
-#include "AudioToolbox/AudioToolbox.h"
+#include <AudioUnit/AudioUnit.h>
 
 namespace vock {
 namespace audio {
 
 using namespace node;
 
-struct QueueItem {
-  AudioQueueBufferRef buf;
-  UInt32 packet_count;
-};
-
-class Base : public ObjectWrap {
+class Audio : public ObjectWrap {
  public:
-  Base() : active_(false) {
-  }
+  Audio(Float64 rate);
+  ~Audio();
 
-  static v8::Handle<v8::Value> Start(const v8::Arguments& args);
-  static v8::Handle<v8::Value> Stop(const v8::Arguments& args);
+  static void Init(v8::Handle<v8::Object> target);
+
+  static v8::Handle<v8::Value> New(const v8::Arguments& arg);
+  static v8::Handle<v8::Value> Start(const v8::Arguments& arg);
+  static v8::Handle<v8::Value> Stop(const v8::Arguments& arg);
+
+  static OSStatus InputCallback(void* arg,
+                                AudioUnitRenderActionFlags* flags,
+                                const AudioTimeStamp* ts,
+                                UInt32 bus,
+                                UInt32 frame_count,
+                                AudioBufferList* data);
+  static OSStatus OutputCallback(void* arg,
+                                 AudioUnitRenderActionFlags* flags,
+                                 const AudioTimeStamp* ts,
+                                 UInt32 bus,
+                                 UInt32 frame_count,
+                                 AudioBufferList* data);
 
  protected:
-  AudioQueueRef aq_;
+  static const int kInputBus = 1;
+  static const int kOutputBus = 0;
+
   AudioStreamBasicDescription desc_;
-  bool active_;
-};
-
-class Recorder : public Base {
- public:
-  Recorder(Float64 rate, Float64 seconds);
-  ~Recorder();
-
-  static void InputCallback(void* data,
-                            AudioQueueRef queue,
-                            AudioQueueBufferRef buf,
-                            const AudioTimeStamp* start_time,
-                            UInt32 packet_count,
-                            const AudioStreamPacketDescription* packets);
-  static void AsyncCallback(uv_async_t* async, int status);
-
-  static void Init(v8::Handle<v8::Object> target);
-
-  static v8::Handle<v8::Value> New(const v8::Arguments& args);
-
- protected:
-  static const int kBufferCount = 16;
-
-  AudioQueueBufferRef buffers_[kBufferCount];
-  UInt32 buffer_size_;
-
-  // Internal buffer queue
-  QueueItem queue_[kBufferCount];
-  int queue_index_;
-  uv_mutex_t queue_mutex_;
-
-  uv_async_t async_;
-};
-
-class Player : public Base {
- public:
-  Player(Float64 rate);
-  ~Player();
-
-  static void OutputCallback(void* data,
-                             AudioQueueRef queue,
-                             AudioQueueBufferRef buf);
-  static void AsyncCallback(uv_async_t* async, int status);
-
-  static void Init(v8::Handle<v8::Object> target);
-
-  static v8::Handle<v8::Value> New(const v8::Arguments& args);
-  static v8::Handle<v8::Value> Enqueue(const v8::Arguments& args);
-
- protected:
-  static const int kQueueLen = 512;
-
-  UInt32 buffer_size_;
-  uv_async_t async_;
-
-  AudioQueueBufferRef queue_[kQueueLen];
-  int queue_index_;
+  AudioUnit unit_;
 };
 
 } // namespace audio

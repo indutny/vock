@@ -8,8 +8,7 @@ namespace vock {
 using namespace node;
 
 static void Init(v8::Handle<v8::Object> target) {
-  vock::audio::Recorder::Init(target);
-  vock::audio::Player::Init(target);
+  vock::audio::Audio::Init(target);
   vock::opus::Opus::Init(target);
 }
 

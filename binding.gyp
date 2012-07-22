@@ -12,7 +12,7 @@
       ],
       "conditions": [
         ["OS=='mac'", {
-          "libraries": [ "-framework AudioToolbox" ],
+          "libraries": [ "-framework AudioUnit" ],
         }]
       ]
     }

@@ -28,8 +28,7 @@ using v8::Function;
 using v8::FunctionTemplate;
 using v8::ThrowException;
 
-static Persistent<String> onincoming;
-static Persistent<String> onoutcoming;
+static Persistent<String> ondata_sym;
 
 #define CHECK(op, msg)\
     {\
@@ -57,14 +56,28 @@ Audio::Audio(Float64 rate) : in_unit_(NULL), out_unit_(NULL) {
   desc_.mBytesPerFrame = 2;
   desc_.mReserved = 0;
 
+  // Setup input/output units
   in_unit_ = CreateAudioUnit(true);
   out_unit_ = CreateAudioUnit(false);
+
+  // Setup buffer list
+  buffer_list_.mNumberBuffers = 1;
+  buffer_list_.mBuffers[0].mNumberChannels = 1;
+  buffer_list_.mBuffers[0].mDataByteSize = rate * desc_.mBytesPerFrame; // 1sec
+  buffer_list_.mBuffers[0].mData =
+      new char[buffer_list_.mBuffers[0].mDataByteSize];
+
+  // Setup async callbacks
+  if (uv_async_init(uv_default_loop(), &in_async_, InputAsyncCallback)) {
+    abort();
+  }
 }
 
 
 Audio::~Audio() {
   AudioUnitUninitialize(in_unit_);
   AudioUnitUninitialize(out_unit_);
+  delete[] reinterpret_cast<char*>(buffer_list_.mBuffers[0].mData);
 }
 
 
@@ -234,8 +247,30 @@ OSStatus Audio::InputCallback(void* arg,
                               UInt32 bus,
                               UInt32 frame_count,
                               AudioBufferList* data) {
-  fprintf(stdout, "input\n");
+  Audio* a = reinterpret_cast<Audio*>(arg);
+
+  // Write received data to buffer list
+  if (AudioUnitRender(a->in_unit_,
+                      flags,
+                      ts,
+                      bus,
+                      frame_count,
+                      &a->buffer_list_)) {
+    abort();
+  }
+
+  uv_async_send(&a->in_async_);
+
   return 0;
+}
+
+
+void Audio::InputAsyncCallback(uv_async_t* async, int status) {
+  HandleScope scope;
+  Audio* a = container_of(async, Audio, in_async_);
+
+  Handle<Value> argv[0] = {};
+  MakeCallback(a->handle_, ondata_sym, 0, argv);
 }
 
 
@@ -245,9 +280,8 @@ OSStatus Audio::OutputCallback(void* arg,
                                UInt32 bus,
                                UInt32 frame_count,
                                AudioBufferList* data) {
-  fprintf(stdout, "output\n");
   for (UInt32 i = 0; i < data->mNumberBuffers; i++) {
-//    memset(data->mBuffers[i].mData, 255, data->mBuffers[i].mDataByteSize);
+    memset(data->mBuffers[i].mData, 255, data->mBuffers[i].mDataByteSize);
   }
   return 0;
 }
@@ -256,8 +290,7 @@ OSStatus Audio::OutputCallback(void* arg,
 void Audio::Init(Handle<Object> target) {
   HandleScope scope;
 
-  onincoming = Persistent<String>::New(String::NewSymbol("onincoming"));
-  onoutcoming = Persistent<String>::New(String::NewSymbol("onoutcoming"));
+  ondata_sym = Persistent<String>::New(String::NewSymbol("ondata"));
 
   Local<FunctionTemplate> t = FunctionTemplate::New(Audio::New);
 

@@ -37,6 +37,8 @@ class Audio : public ObjectWrap {
                                  UInt32 frame_count,
                                  AudioBufferList* data);
 
+  static void InputAsyncCallback(uv_async_t* async, int status);
+
  protected:
   static const int kInputBus = 1;
   static const int kOutputBus = 0;
@@ -44,6 +46,9 @@ class Audio : public ObjectWrap {
   AudioStreamBasicDescription desc_;
   AudioUnit in_unit_;
   AudioUnit out_unit_;
+  AudioBufferList buffer_list_;
+
+  uv_async_t in_async_;
 };
 
 } // namespace audio

@@ -16,7 +16,21 @@ struct QueueItem {
   UInt32 packet_count;
 };
 
-class Recorder : public ObjectWrap {
+class Base : public ObjectWrap {
+ public:
+  Base() : active_(false) {
+  }
+
+  static v8::Handle<v8::Value> Start(const v8::Arguments& args);
+  static v8::Handle<v8::Value> Stop(const v8::Arguments& args);
+
+ protected:
+  AudioQueueRef aq_;
+  AudioStreamBasicDescription desc_;
+  bool active_;
+};
+
+class Recorder : public Base {
  public:
   Recorder(Float64 rate, Float64 seconds);
   ~Recorder();
@@ -32,24 +46,44 @@ class Recorder : public ObjectWrap {
   static void Init(v8::Handle<v8::Object> target);
 
   static v8::Handle<v8::Value> New(const v8::Arguments& args);
-  static v8::Handle<v8::Value> Start(const v8::Arguments& args);
-  static v8::Handle<v8::Value> Stop(const v8::Arguments& args);
 
  protected:
-  static const int bufferCount_ = 16;
+  static const int kBufferCount = 16;
 
-  AudioQueueRef aq_;
-  AudioStreamBasicDescription desc_;
-  AudioQueueBufferRef buffers_[bufferCount_];
-  UInt32 bufferSize_;
+  AudioQueueBufferRef buffers_[kBufferCount];
+  UInt32 buffer_size_;
 
   // Internal buffer queue
-  QueueItem queue_[bufferCount_];
+  QueueItem queue_[kBufferCount];
   int queue_index_;
   uv_mutex_t queue_mutex_;
 
   uv_async_t async_;
-  bool recording_;
+};
+
+class Player : public Base {
+ public:
+  Player(Float64 rate);
+  ~Player();
+
+  static void OutputCallback(void* data,
+                             AudioQueueRef queue,
+                             AudioQueueBufferRef buf);
+  static void AsyncCallback(uv_async_t* async, int status);
+
+  static void Init(v8::Handle<v8::Object> target);
+
+  static v8::Handle<v8::Value> New(const v8::Arguments& args);
+  static v8::Handle<v8::Value> Enqueue(const v8::Arguments& args);
+
+ protected:
+  static const int kQueueLen = 512;
+
+  UInt32 buffer_size_;
+  uv_async_t async_;
+
+  AudioQueueBufferRef queue_[kQueueLen];
+  int queue_index_;
 };
 
 } // namespace audio

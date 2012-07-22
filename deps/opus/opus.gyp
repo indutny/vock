@@ -145,7 +145,7 @@
             ],
           },
         }],
-        ["opus_build_type==\"fixed\"", {
+        ["opus_build_type=='fixed'", {
           "defines": ["FIXED_POINT"],
           "sources": [
             "opus/silk/fixed/LTP_analysis_filter_FIX.c",
@@ -175,7 +175,7 @@
             "opus/silk/fixed/schur_FIX",
           ]
         }],
-        ["opus_build_type==\"float\"", {
+        ["opus_build_type=='float'", {
           "defines": ["FLOATING_POINT"],
           "sources": [
             "opus/silk/float/apply_sine_window_FLP.c",

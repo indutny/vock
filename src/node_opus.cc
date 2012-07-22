@@ -1,9 +1,9 @@
 #include "node_opus.h"
+
 #include "node.h"
+#include "node_buffer.h"
 #include "node_object_wrap.h"
 #include "opus.h"
-
-#include <stdint.h> // int32_t
 
 namespace vock {
 namespace opus {
@@ -11,10 +11,33 @@ namespace opus {
 using namespace node;
 using namespace v8;
 
-Opus::Opus(int32_t rate) {
+#define UNWRAP\
+    Opus* o = ObjectWrap::Unwrap<Opus>(args.This());
+
+#define THROW_OPUS_ERROR(err)\
+    ThrowException(String::Concat(String::New("Opus error: "),\
+                                  String::New(opus_strerror(err))))
+
+Opus::Opus(opus_int32 rate) : rate_(rate), enc_(NULL), dec_(NULL) {
   int err;
-  enc = opus_encoder_create(rate, 1, OPUS_APPLICATION_VOIP, &err);
-  if (err != OPUS_OK) abort();
+
+  enc_ = opus_encoder_create(rate, 1, OPUS_APPLICATION_VOIP, &err);
+  if (err != OPUS_OK) {
+    THROW_OPUS_ERROR(err);
+    return;
+  }
+
+  dec_ = opus_decoder_create(rate, 1, &err);
+  if (err != OPUS_OK) {
+    THROW_OPUS_ERROR(err);
+    return;
+  }
+}
+
+
+Opus::~Opus() {
+  if (enc_ != NULL) opus_encoder_destroy(enc_);
+  if (dec_ != NULL) opus_decoder_destroy(dec_);
 }
 
 
@@ -32,6 +55,72 @@ Handle<Value> Opus::New(const Arguments& args) {
 }
 
 
+Handle<Value> Opus::Encode(const Arguments& args) {
+  HandleScope scope;
+
+  UNWRAP
+
+  if (args.Length() < 1 || !Buffer::HasInstance(args[0])) {
+    return scope.Close(ThrowException(String::New(
+            "First argument should be Buffer")));
+  }
+
+  char* data = Buffer::Data(args[0].As<Object>());
+  size_t len = Buffer::Length(args[0].As<Object>());
+
+  if ((len & sizeof(opus_int16)) != 0) {
+    return scope.Close(ThrowException(String::New(
+            "Buffer has incorrect size!")));
+  }
+
+  unsigned char out[4096];
+
+  opus_int32 ret;
+
+  ret = opus_encode(o->enc_,
+                    reinterpret_cast<opus_int16*>(data),
+                    len / sizeof(opus_int16),
+                    out,
+                    sizeof(out));
+  if (ret < 0) {
+    return scope.Close(THROW_OPUS_ERROR(ret));
+  }
+
+  return scope.Close(Buffer::New(reinterpret_cast<char*>(out), ret)->handle_);
+}
+
+
+Handle<Value> Opus::Decode(const Arguments& args) {
+  HandleScope scope;
+
+  UNWRAP
+
+  if (args.Length() < 1 || !Buffer::HasInstance(args[0])) {
+    return scope.Close(ThrowException(String::New(
+            "First argument should be Buffer")));
+  }
+
+  char* data = Buffer::Data(args[0].As<Object>());
+  size_t len = Buffer::Length(args[0].As<Object>());
+
+  opus_int16 out[100 * 1024];
+  opus_int16 ret;
+
+  ret = opus_decode(o->dec_,
+                    reinterpret_cast<const unsigned char*>(data),
+                    len,
+                    out,
+                    sizeof(out),
+                    1);
+  if (ret < 0) {
+    return scope.Close(THROW_OPUS_ERROR(ret));
+  }
+
+  return scope.Close(Buffer::New(reinterpret_cast<char*>(out),
+                                 ret * sizeof(out[0]))->handle_);
+}
+
+
 void Opus::Init(Handle<Object> target) {
   HandleScope scope;
 
@@ -40,7 +129,8 @@ void Opus::Init(Handle<Object> target) {
   t->InstanceTemplate()->SetInternalFieldCount(1);
   t->SetClassName(String::NewSymbol("Opus"));
 
-  // NODE_SET_PROTOTYPE_METHOD(t, "init", O::Init);
+  NODE_SET_PROTOTYPE_METHOD(t, "encode", Opus::Encode);
+  NODE_SET_PROTOTYPE_METHOD(t, "decode", Opus::Decode);
 
   target->Set(String::NewSymbol("Opus"), t->GetFunction());
 }

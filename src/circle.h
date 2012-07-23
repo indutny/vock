@@ -51,7 +51,7 @@ class Circle {
   inline char* Produce(size_t size) {
     size_ += size;
 
-    if (tail_->current + size > tail_->end) {
+    while (tail_->current + size > tail_->end) {
       // If next buffer is free - move tail to it and reuse it!
       if (tail_->next->size == 0 && tail_->next != head_) {
         tail_ = tail_->next;

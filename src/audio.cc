@@ -51,8 +51,7 @@ Audio::Audio(Float64 rate) : rate_(rate),
   desc_.mSampleRate = rate;
   desc_.mFormatID = kAudioFormatLinearPCM;
   desc_.mFormatFlags = kAudioFormatFlagIsSignedInteger |
-                       kAudioFormatFlagIsPacked |
-                       kAudioFormatFlagIsNonInterleaved;
+                       kAudioFormatFlagIsBigEndian;
   desc_.mFramesPerPacket = 1;
   desc_.mChannelsPerFrame = 1;
   desc_.mBitsPerChannel = 16;
@@ -285,12 +284,10 @@ OSStatus Audio::InputCallback(void* arg,
       frame_count * a->desc_.mBytesPerFrame);
 
   // Write received data to buffer list
-  if (AudioUnitRender(a->in_unit_,
-                      flags,
-                      ts,
-                      bus,
-                      frame_count,
-                      &list)) {
+  OSStatus st;
+  st = AudioUnitRender(a->in_unit_, flags, ts, bus, frame_count, &list);
+  if (st) {
+    fprintf(stderr, "%d\n", st);
     abort();
   }
 

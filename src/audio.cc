@@ -44,8 +44,8 @@ static Persistent<String> ondata_sym;
 Audio::Audio(Float64 rate) : rate_(rate),
                              in_unit_(NULL),
                              out_unit_(NULL),
-                             in_circle_(10 * 1024),
-                             out_circle_(10 * 1024) {
+                             in_buffer_(100 * 1024),
+                             out_buffer_(100 * 1024) {
   // Initialize description
   memset(&desc_, 0, sizeof(desc_));
   desc_.mSampleRate = rate;
@@ -66,6 +66,14 @@ Audio::Audio(Float64 rate) : rate_(rate),
 
   // Setup async callbacks
   if (uv_async_init(uv_default_loop(), &in_async_, InputAsyncCallback)) {
+    abort();
+  }
+
+  // Setup mutexes
+  if (uv_mutex_init(&in_mutex_)) {
+    abort();
+  }
+  if (uv_mutex_init(&out_mutex_)) {
     abort();
   }
 }
@@ -237,6 +245,27 @@ Handle<Value> Audio::Stop(const Arguments& args) {
 }
 
 
+Handle<Value> Audio::Enqueue(const Arguments& args) {
+  HandleScope scope;
+  Audio* a = ObjectWrap::Unwrap<Audio>(args.This());
+
+  if (args.Length() < 1 || !Buffer::HasInstance(args[0])) {
+    return scope.Close(ThrowException(String::New(
+        "First argument should be a Buffer!")));
+  }
+
+  char* buff = Buffer::Data(args[0].As<Object>());
+  size_t size = Buffer::Length(args[0].As<Object>());
+
+  uv_mutex_lock(&a->out_mutex_);
+  char* data = a->out_buffer_.Produce(size);
+  memcpy(data, buff, size);
+  uv_mutex_unlock(&a->out_mutex_);
+
+  return scope.Close(Null());
+}
+
+
 OSStatus Audio::InputCallback(void* arg,
                               AudioUnitRenderActionFlags* flags,
                               const AudioTimeStamp* ts,
@@ -245,12 +274,16 @@ OSStatus Audio::InputCallback(void* arg,
                               AudioBufferList* data) {
   Audio* a = reinterpret_cast<Audio*>(arg);
 
+  uv_mutex_lock(&a->in_mutex_);
+
   // Setup buffer list
   AudioBufferList list;
   list.mNumberBuffers = 1;
   list.mBuffers[0].mNumberChannels = 1;
-  list.mBuffers[0].mDataByteSize = a->rate_ * a->desc_.mBytesPerFrame; // 1sec
-  list.mBuffers[0].mData = NULL;
+  list.mBuffers[0].mDataByteSize = frame_count * a->desc_.mBytesPerFrame; // 1sec
+  list.mBuffers[0].mData = a->in_buffer_.Produce(
+      frame_count * a->desc_.mBytesPerFrame);
+
   // Write received data to buffer list
   if (AudioUnitRender(a->in_unit_,
                       flags,
@@ -262,6 +295,7 @@ OSStatus Audio::InputCallback(void* arg,
   }
 
   uv_async_send(&a->in_async_);
+  uv_mutex_unlock(&a->in_mutex_);
 
   return 0;
 }
@@ -271,8 +305,14 @@ void Audio::InputAsyncCallback(uv_async_t* async, int status) {
   HandleScope scope;
   Audio* a = container_of(async, Audio, in_async_);
 
-  Handle<Value> argv[0] = {};
-  MakeCallback(a->handle_, ondata_sym, 0, argv);
+  uv_mutex_lock(&a->in_mutex_);
+  if (a->in_buffer_.Size() == 0) return;
+  Buffer* in = Buffer::New(a->in_buffer_.Size());
+  a->in_buffer_.Flush(Buffer::Data(in));
+  uv_mutex_unlock(&a->in_mutex_);
+
+  Handle<Value> argv[1] = { in->handle_ };
+  MakeCallback(a->handle_, ondata_sym, 1, argv);
 }
 
 
@@ -282,9 +322,21 @@ OSStatus Audio::OutputCallback(void* arg,
                                UInt32 bus,
                                UInt32 frame_count,
                                AudioBufferList* data) {
-  for (UInt32 i = 0; i < data->mNumberBuffers; i++) {
-    memset(data->mBuffers[i].mData, 255, data->mBuffers[i].mDataByteSize);
+  Audio* a = reinterpret_cast<Audio*>(arg);
+
+  char* buff = reinterpret_cast<char*>(data->mBuffers[0].mData);
+  UInt32 size = data->mBuffers[0].mDataByteSize;
+
+  // Put available bytes from buffer
+  uv_mutex_lock(&a->out_mutex_);
+  size_t written = a->out_buffer_.Fill(buff, size);
+  uv_mutex_unlock(&a->out_mutex_);
+
+  // Fill rest with zeroes
+  if (written < size) {
+    memset(buff + written, 0, size - written);
   }
+
   return 0;
 }
 
@@ -301,6 +353,7 @@ void Audio::Init(Handle<Object> target) {
 
   NODE_SET_PROTOTYPE_METHOD(t, "start", Audio::Start);
   NODE_SET_PROTOTYPE_METHOD(t, "stop", Audio::Stop);
+  NODE_SET_PROTOTYPE_METHOD(t, "enqueue", Audio::Enqueue);
 
   target->Set(String::NewSymbol("Audio"), t->GetFunction());
 }

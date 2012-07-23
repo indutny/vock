@@ -24,6 +24,7 @@ class Audio : public ObjectWrap {
   static v8::Handle<v8::Value> New(const v8::Arguments& arg);
   static v8::Handle<v8::Value> Start(const v8::Arguments& arg);
   static v8::Handle<v8::Value> Stop(const v8::Arguments& arg);
+  static v8::Handle<v8::Value> Enqueue(const v8::Arguments& arg);
 
   static OSStatus InputCallback(void* arg,
                                 AudioUnitRenderActionFlags* flags,
@@ -48,8 +49,10 @@ class Audio : public ObjectWrap {
   AudioStreamBasicDescription desc_;
   AudioUnit in_unit_;
   AudioUnit out_unit_;
-  Circle in_circle_;
-  Circle out_circle_;
+  Circle in_buffer_;
+  Circle out_buffer_;
+  uv_mutex_t in_mutex_;
+  uv_mutex_t out_mutex_;
 
   uv_async_t in_async_;
 };

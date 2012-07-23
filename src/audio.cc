@@ -18,6 +18,7 @@ using v8::Persistent;
 using v8::Local;
 using v8::Array;
 using v8::String;
+using v8::Number;
 using v8::Value;
 using v8::Arguments;
 using v8::Object;
@@ -33,7 +34,7 @@ static Persistent<String> ondata_sym;
 #define CHECK(op, msg)\
     {\
       OSStatus st = 0;\
-      if ((st = op)) {\
+      if ((st = op) != noErr) {\
         char err[1024];\
         snprintf(err, sizeof(err), "%s - %d", msg, st);\
         ThrowException(String::New(err));\
@@ -41,23 +42,12 @@ static Persistent<String> ondata_sym;
       }\
     }
 
-Audio::Audio(Float64 rate) : rate_(rate),
-                             in_unit_(NULL),
-                             out_unit_(NULL),
-                             in_buffer_(100 * 1024),
-                             out_buffer_(100 * 1024) {
+Audio::Audio() : in_unit_(NULL),
+                 out_unit_(NULL),
+                 in_buffer_(100 * 1024),
+                 out_buffer_(100 * 1024) {
   // Initialize description
   memset(&desc_, 0, sizeof(desc_));
-  desc_.mSampleRate = rate;
-  desc_.mFormatID = kAudioFormatLinearPCM;
-  desc_.mFormatFlags = kAudioFormatFlagIsSignedInteger |
-                       kAudioFormatFlagIsBigEndian;
-  desc_.mFramesPerPacket = 1;
-  desc_.mChannelsPerFrame = 1;
-  desc_.mBitsPerChannel = 16;
-  desc_.mBytesPerPacket = 2;
-  desc_.mBytesPerFrame = 2;
-  desc_.mReserved = 0;
 
   // Setup input/output units
   in_unit_ = CreateAudioUnit(true);
@@ -67,6 +57,7 @@ Audio::Audio(Float64 rate) : rate_(rate),
   if (uv_async_init(uv_default_loop(), &in_async_, InputAsyncCallback)) {
     abort();
   }
+  uv_unref(reinterpret_cast<uv_handle_t*>(&in_async_));
 
   // Setup mutexes
   if (uv_mutex_init(&in_mutex_)) {
@@ -75,12 +66,25 @@ Audio::Audio(Float64 rate) : rate_(rate),
   if (uv_mutex_init(&out_mutex_)) {
     abort();
   }
+
+  // Init buffer list
+  blist_ = reinterpret_cast<AudioBufferList*>(calloc(
+      1, sizeof(&blist_) + desc_.mChannelsPerFrame * sizeof(AudioBuffer)));
+  if (blist_ == NULL) abort();
+  blist_->mNumberBuffers = 1;
+  blist_->mBuffers[0].mNumberChannels = desc_.mChannelsPerFrame;
+  blist_->mBuffers[0].mData = NULL;
+  blist_->mBuffers[0].mDataByteSize = 0;
 }
 
 
 Audio::~Audio() {
   AudioUnitUninitialize(in_unit_);
   AudioUnitUninitialize(out_unit_);
+  uv_close(reinterpret_cast<uv_handle_t*>(&in_async_), NULL);
+  uv_mutex_destroy(&in_mutex_);
+  uv_mutex_destroy(&out_mutex_);
+  free(blist_);
 }
 
 
@@ -108,61 +112,12 @@ AudioUnit Audio::CreateAudioUnit(bool is_input) {
   CHECK(AudioComponentInstanceNew(au_component, &unit),
         "AudioComponentInstanceNew() failed")
 
-  CHECK(AudioUnitSetProperty(unit,
-                             kAudioUnitProperty_StreamFormat,
-                             kAudioUnitScope_Output,
-                             kInputBus,
-                             &desc_,
-                             sizeof(desc_)),
-        "Input: set StreamFormat failed")
-  CHECK(AudioUnitSetProperty(unit,
-                             kAudioUnitProperty_StreamFormat,
-                             kAudioUnitScope_Input,
-                             kOutputBus,
-                             &desc_,
-                             sizeof(desc_)),
-        "Output: set StreamFormat failed")
-  CHECK(AudioUnitSetProperty(unit,
-                             kAudioUnitProperty_ShouldAllocateBuffer,
-                             kAudioUnitScope_Output,
-                             kInputBus,
-                             &disable,
-                             sizeof(disable)),
-        "Input: ShouldAllocateBuffer failed")
-
-  // Setup callbacks
-  AURenderCallbackStruct callback;
-
-  if (is_input) {
-    callback.inputProc = InputCallback;
-    callback.inputProcRefCon = this;
-    CHECK(AudioUnitSetProperty(unit,
-                               kAudioOutputUnitProperty_SetInputCallback,
-                               kAudioUnitScope_Global,
-                               kInputBus,
-                               &callback,
-                               sizeof(callback)),
-          "Input: set callback failed")
-  } else {
-    callback.inputProc = OutputCallback;
-    callback.inputProcRefCon = this;
-    CHECK(AudioUnitSetProperty(unit,
-                               kAudioUnitProperty_SetRenderCallback,
-                               kAudioUnitScope_Global,
-                               kOutputBus,
-                               &callback,
-                               sizeof(callback)),
-          "Output: set callback failed")
-  }
-
-  CHECK(AudioUnitInitialize(unit), "AudioUnitInitialized() failed")
-
   // Attach input/output
   CHECK(AudioUnitSetProperty(unit,
                              kAudioOutputUnitProperty_EnableIO,
                              kAudioUnitScope_Input,
                              kInputBus,
-                             is_input ? &enable : &disable,
+                             &enable,
                              sizeof(enable)),
         "Input: EnableIO failed")
   CHECK(AudioUnitSetProperty(unit,
@@ -173,8 +128,8 @@ AudioUnit Audio::CreateAudioUnit(bool is_input) {
                              sizeof(enable)),
        "Output: EnableIO failed")
 
+  // Set input device
   if (is_input) {
-    // Set input device
     UInt32 input_size = sizeof(AudioDeviceID);
     AudioDeviceID input;
     CHECK(AudioHardwareGetProperty(kAudioHardwarePropertyDefaultInputDevice,
@@ -190,6 +145,68 @@ AudioUnit Audio::CreateAudioUnit(bool is_input) {
           "Failed to set input device")
   }
 
+  // Setup callbacks
+  AURenderCallbackStruct callback;
+
+  if (is_input) {
+    callback.inputProc = InputCallback;
+    callback.inputProcRefCon = this;
+    CHECK(AudioUnitSetProperty(unit,
+                               kAudioOutputUnitProperty_SetInputCallback,
+                               kAudioUnitScope_Global,
+                               kOutputBus,
+                               &callback,
+                               sizeof(callback)),
+          "Input: set callback failed")
+  } else {
+    callback.inputProc = OutputCallback;
+    callback.inputProcRefCon = this;
+    CHECK(AudioUnitSetProperty(unit,
+                               kAudioUnitProperty_SetRenderCallback,
+                               kAudioUnitScope_Global,
+                               kOutputBus,
+                               &callback,
+                               sizeof(callback)),
+          "Output: set callback failed")
+  }
+
+  // Set format
+  if (is_input) {
+    UInt32 size = sizeof(desc_);
+    CHECK(AudioUnitGetProperty(unit,
+                               kAudioUnitProperty_StreamFormat,
+                               kAudioUnitScope_Input,
+                               kInputBus,
+                               &desc_,
+                               &size),
+          "Input: get StreamFormat failed")
+  }
+  CHECK(AudioUnitSetProperty(unit,
+                             kAudioUnitProperty_StreamFormat,
+                             kAudioUnitScope_Output,
+                             kInputBus,
+                             &desc_,
+                             sizeof(desc_)),
+        "Input: set StreamFormat failed")
+  CHECK(AudioUnitSetProperty(unit,
+                             kAudioUnitProperty_StreamFormat,
+                             kAudioUnitScope_Input,
+                             kOutputBus,
+                             &desc_,
+                             sizeof(desc_)),
+        "Output: set StreamFormat failed")
+
+  // Some wierd options
+  CHECK(AudioUnitSetProperty(unit,
+                             kAudioUnitProperty_ShouldAllocateBuffer,
+                             kAudioUnitScope_Output,
+                             kInputBus,
+                             &disable,
+                             sizeof(disable)),
+        "Input: ShouldAllocateBuffer failed")
+
+  CHECK(AudioUnitInitialize(unit), "AudioUnitInitialized() failed")
+
   return unit;
 }
 
@@ -197,14 +214,13 @@ AudioUnit Audio::CreateAudioUnit(bool is_input) {
 Handle<Value> Audio::New(const Arguments& args) {
   HandleScope scope;
 
-  if (args.Length() < 1 || !args[0]->IsNumber()) {
-    return scope.Close(ThrowException(String::New(
-        "First argument should be number")));
-  }
-
   // Second argument is in msec
-  Audio* a = new Audio(args[0]->NumberValue());
+  Audio* a = new Audio();
   a->Wrap(args.Holder());
+
+  a->handle_->Set(String::NewSymbol("rate"), Number::New(a->desc_.mSampleRate));
+  a->handle_->Set(String::NewSymbol("channels"),
+                  Number::New(a->desc_.mChannelsPerFrame));
 
   return scope.Close(args.This());
 }
@@ -217,11 +233,17 @@ Handle<Value> Audio::Start(const Arguments& args) {
   OSStatus st;
 
   st = AudioOutputUnitStart(a->in_unit_);
+  if (st) {
+    return scope.Close(ThrowException(String::New(
+        "Failed to start unit!")));
+  }
   st = AudioOutputUnitStart(a->out_unit_);
   if (st) {
     return scope.Close(ThrowException(String::New(
         "Failed to start unit!")));
   }
+  uv_ref(reinterpret_cast<uv_handle_t*>(&a->in_async_));
+  a->Ref();
 
   return scope.Close(Null());
 }
@@ -234,11 +256,17 @@ Handle<Value> Audio::Stop(const Arguments& args) {
   OSStatus st;
 
   st = AudioOutputUnitStop(a->in_unit_);
+  if (st) {
+    return scope.Close(ThrowException(String::New(
+        "Failed to stop unit!")));
+  }
   st = AudioOutputUnitStop(a->out_unit_);
   if (st) {
     return scope.Close(ThrowException(String::New(
         "Failed to stop unit!")));
   }
+  uv_unref(reinterpret_cast<uv_handle_t*>(&a->in_async_));
+  a->Unref();
 
   return scope.Close(Null());
 }
@@ -276,16 +304,13 @@ OSStatus Audio::InputCallback(void* arg,
   uv_mutex_lock(&a->in_mutex_);
 
   // Setup buffer list
-  AudioBufferList list;
-  list.mNumberBuffers = 1;
-  list.mBuffers[0].mNumberChannels = 1;
-  list.mBuffers[0].mDataByteSize = frame_count * a->desc_.mBytesPerFrame; // 1sec
-  list.mBuffers[0].mData = a->in_buffer_.Produce(
-      frame_count * a->desc_.mBytesPerFrame);
+  UInt32 size = frame_count * a->desc_.mBytesPerFrame;
+  a->blist_->mBuffers[0].mDataByteSize = size;
+  a->blist_->mBuffers[0].mData = a->in_buffer_.Produce(size);
 
   // Write received data to buffer list
   OSStatus st;
-  st = AudioUnitRender(a->in_unit_, flags, ts, bus, frame_count, &list);
+  st = AudioUnitRender(a->in_unit_, flags, ts, bus, frame_count, a->blist_);
   if (st) {
     fprintf(stderr, "%d\n", st);
     abort();
@@ -334,7 +359,7 @@ OSStatus Audio::OutputCallback(void* arg,
     memset(buff + written, 0, size - written);
   }
 
-  return 0;
+  return noErr;
 }
 
 

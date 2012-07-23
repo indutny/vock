@@ -13,7 +13,7 @@ using namespace node;
 
 class Opus : public ObjectWrap {
  public:
-  Opus(opus_int32 rate);
+  Opus(opus_int32 rate, int channels);
   ~Opus();
 
   static void Init(v8::Handle<v8::Object> target);
@@ -24,6 +24,7 @@ class Opus : public ObjectWrap {
 
  protected:
   opus_int32 rate_;
+  int channels_;
   OpusEncoder* enc_;
   OpusDecoder* dec_;
 };

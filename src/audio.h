@@ -14,7 +14,7 @@ using namespace node;
 
 class Audio : public ObjectWrap {
  public:
-  Audio(Float64 rate);
+  Audio();
   ~Audio();
 
   AudioUnit CreateAudioUnit(bool is_input);
@@ -45,7 +45,6 @@ class Audio : public ObjectWrap {
   static const int kInputBus = 1;
   static const int kOutputBus = 0;
 
-  Float64 rate_;
   AudioStreamBasicDescription desc_;
   AudioUnit in_unit_;
   AudioUnit out_unit_;
@@ -55,6 +54,7 @@ class Audio : public ObjectWrap {
   uv_mutex_t out_mutex_;
 
   uv_async_t in_async_;
+  AudioBufferList* blist_;
 };
 
 } // namespace audio

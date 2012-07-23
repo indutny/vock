@@ -18,16 +18,19 @@ using namespace v8;
     ThrowException(String::Concat(String::New("Opus error: "),\
                                   String::New(opus_strerror(err))))
 
-Opus::Opus(opus_int32 rate) : rate_(rate), enc_(NULL), dec_(NULL) {
+Opus::Opus(opus_int32 rate, int channels) : rate_(rate),
+                                            channels_(channels),
+                                            enc_(NULL),
+                                            dec_(NULL) {
   int err;
 
-  enc_ = opus_encoder_create(rate, 1, OPUS_APPLICATION_VOIP, &err);
+  enc_ = opus_encoder_create(rate, channels, OPUS_APPLICATION_VOIP, &err);
   if (err != OPUS_OK) {
     THROW_OPUS_ERROR(err);
     return;
   }
 
-  dec_ = opus_decoder_create(rate, 1, &err);
+  dec_ = opus_decoder_create(rate, channels, &err);
   if (err != OPUS_OK) {
     THROW_OPUS_ERROR(err);
     return;
@@ -44,11 +47,11 @@ Opus::~Opus() {
 Handle<Value> Opus::New(const Arguments& args) {
   HandleScope scope;
 
-  if (args.Length() < 1 || !args[0]->IsNumber()) {
+  if (args.Length() < 2 || !args[0]->IsNumber() || !args[1]->IsNumber()) {
     return scope.Close(ThrowException(String::New("Incorrect arguments!")));
   }
 
-  Opus* o = new Opus(args[0]->IntegerValue());
+  Opus* o = new Opus(args[0]->IntegerValue(), args[1]->IntegerValue());
   o->Wrap(args.Holder());
 
   return scope.Close(args.This());

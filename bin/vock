@@ -3,7 +3,7 @@
 
 var vock = require('..'),
     argv = require('optimist')
-        .usage('Usage: $0 --local=:44123 --remote=192.168.0.2:44123')
+        .usage('Usage: $0 --local :44123 --remote 192.168.0.2:44123')
         .alias('l', 'local')
         .alias('r', 'remote')
         .demand(['local', 'remote'])

@@ -2,9 +2,10 @@
 #define _SRC_AUDIO_AU_H_
 
 #include "node.h"
-#include <AudioUnit/AudioUnit.h>
-
+#include "node_buffer.h"
 #include "ring_buffer.h"
+
+#include <AudioUnit/AudioUnit.h>
 
 namespace vock {
 namespace audio {
@@ -23,7 +24,7 @@ class HALUnit {
   int Stop();
 
   size_t GetReadSize();
-  size_t Read(char* out);
+  node::Buffer* Read();
   void Put(char* data, size_t size);
 
   const char* err;
@@ -51,12 +52,13 @@ class HALUnit {
   AudioUnit in_unit_;
   AudioUnit out_unit_;
 
-  RingBuffer in_;
-  RingBuffer out_;
+  RingBuffer in_ring_;
+  RingBuffer out_ring_;
   AudioBufferList* blist_;
 
   uv_async_t* input_cb_;
   uv_mutex_t in_mutex_;
+  uv_mutex_t out_mutex_;
 };
 
 } // namespace audio

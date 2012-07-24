@@ -100,15 +100,8 @@ Handle<Value> Audio::Enqueue(const Arguments& args) {
         "First argument should be a Buffer!")));
   }
 
-  char* buff = Buffer::Data(args[0].As<Object>());
-  size_t size = Buffer::Length(args[0].As<Object>());
-
-  /*
-  uv_mutex_lock(&a->out_mutex_);
-  char* data = a->out_buffer_.Produce(size);
-  memcpy(data, buff, size);
-  uv_mutex_unlock(&a->out_mutex_);
-  */
+  a->unit_->Put(Buffer::Data(args[0].As<Object>()),
+                Buffer::Length(args[0].As<Object>()));
 
   return scope.Close(Null());
 }
@@ -118,16 +111,8 @@ void Audio::InputAsyncCallback(uv_async_t* async, int status) {
   HandleScope scope;
   Audio* a = container_of(async, Audio, in_async_);
 
-  /*
-  uv_mutex_lock(&a->in_mutex_);
-  if (a->in_buffer_.Size() == 0) return;
-  Buffer* in = Buffer::New(a->in_buffer_.Size());
-  a->in_buffer_.Flush(Buffer::Data(in));
-  uv_mutex_unlock(&a->in_mutex_);
-
-  Handle<Value> argv[1] = { in->handle_ };
+  Handle<Value> argv[1] = { a->unit_->Read()->handle_ };
   MakeCallback(a->handle_, ondata_sym, 1, argv);
-  */
 }
 
 

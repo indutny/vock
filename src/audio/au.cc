@@ -1,9 +1,10 @@
 #include "au.h"
+#include "ring_buffer.h"
 #include "node.h"
+#include "node_buffer.h"
+
 #include <AudioUnit/AudioUnit.h>
 #include <string.h> // memset
-
-#include "ring_buffer.h"
 
 #define CHECK(fn, msg)\
     {\
@@ -18,19 +19,24 @@
 namespace vock {
 namespace audio {
 
+using node::Buffer;
+
 HALUnit::HALUnit(Float64 rate, uv_async_t* input_cb) : err(NULL),
-                                                       in_(100 * 1024),
-                                                       out_(100 * 1024),
-                                                       input_cb_(NULL) {
+                                                       in_ring_(100 * 1024),
+                                                       out_ring_(100 * 1024),
+                                                       input_cb_(input_cb) {
   in_unit_ = CreateUnit(kInputUnit, rate);
   out_unit_ = CreateUnit(kOutputUnit, rate);
   if (uv_mutex_init(&in_mutex_)) abort();
+  if (uv_mutex_init(&out_mutex_)) abort();
 }
 
 
 HALUnit::~HALUnit() {
   if (in_unit_ != NULL) AudioUnitUninitialize(in_unit_);
   if (out_unit_ != NULL) AudioUnitUninitialize(out_unit_);
+  uv_mutex_destroy(&in_mutex_);
+  uv_mutex_destroy(&out_mutex_);
 }
 
 
@@ -181,15 +187,19 @@ OSStatus HALUnit::InputCallback(void* arg,
   uv_mutex_lock(&unit->in_mutex_);
   AudioBufferList list;
   list.mNumberBuffers = 1;
-  list.mBuffers[0].mData = unit->in_.Produce(frame_count * 2);
+  list.mBuffers[0].mData = unit->in_ring_.Produce(frame_count * 2);
   list.mBuffers[0].mDataByteSize = frame_count * 2;
   list.mBuffers[0].mNumberChannels = 1;
 
   OSStatus st = AudioUnitRender(unit->in_unit_,
                                 flags, ts, bus, frame_count, &list);
+  if (st != noErr) abort();
   uv_mutex_unlock(&unit->in_mutex_);
 
-  return noErr;
+  // Send message to event-loop's thread
+  uv_async_send(unit->input_cb_);
+
+  return st;
 }
 
 
@@ -201,12 +211,16 @@ OSStatus HALUnit::OutputCallback(void* arg,
                                  AudioBufferList* data) {
   HALUnit* unit = reinterpret_cast<HALUnit*>(arg);
 
-  uv_mutex_lock(&unit->in_mutex_);
-  size_t written = unit->in_.Fill((char*)data->mBuffers[0].mData, frame_count * 2);
-  uv_mutex_unlock(&unit->in_mutex_);
+  char* buff = reinterpret_cast<char*>(data->mBuffers[0].mData);
+  size_t size = frame_count * 2;
+  size_t written;
 
-  if (written < frame_count * 2) {
-    memset((char*)data->mBuffers[0].mData + written, 0, frame_count * 2 - written);
+  uv_mutex_lock(&unit->out_mutex_);
+  written = unit->out_ring_.Fill(buff, size);
+  uv_mutex_unlock(&unit->out_mutex_);
+
+  if (written < size) {
+    memset(buff + written, 0, size - written);
   }
   return noErr;
 }
@@ -235,17 +249,24 @@ int HALUnit::Stop() {
 }
 
 
-size_t HALUnit::GetReadSize() {
-  return 0;
-}
+Buffer* HALUnit::Read() {
+  uv_mutex_lock(&in_mutex_);
 
+  Buffer* result = Buffer::New(in_ring_.Size());
+  in_ring_.Flush(Buffer::Data(result));
 
-size_t HALUnit::Read(char* out) {
-  return 0;
+  uv_mutex_unlock(&in_mutex_);
+  return result;
 }
 
 
 void HALUnit::Put(char* data, size_t size) {
+  uv_mutex_lock(&out_mutex_);
+
+  char* out = out_ring_.Produce(size);
+  memcpy(out, data, size);
+
+  uv_mutex_unlock(&out_mutex_);
 }
 
 } // namespace audio

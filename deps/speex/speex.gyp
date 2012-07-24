@@ -51,7 +51,6 @@
         "speex/libspeex/scal.c",
         "speex/libspeex/kiss_fft.c",
         "speex/libspeex/kiss_fftr.c",
-
       ],
       "conditions": [
         ['OS=="mac"', {

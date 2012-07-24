@@ -2,7 +2,10 @@
   "name": "libopus",
   "version": "0.0.1",
   "private": true,
+  "main": "lib/vock",
   "dependencies": {
-    "node-gyp": "0.6.x"
+    "node-gyp": "0.6.x",
+    "optimist": "~0.3.4",
+    "msgpack-js": "~0.1.1"
   }
 }

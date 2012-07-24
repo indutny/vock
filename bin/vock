@@ -1,0 +1,34 @@
+#!/usr/bin/env node
+// vim:syntax=javascript
+
+var vock = require('..'),
+    argv = require('optimist')
+        .usage('Usage: $0 --local=:44123 --remote=192.168.0.2:44123')
+        .alias('l', 'local')
+        .alias('r', 'remote')
+        .demand(['local', 'remote'])
+        .argv;
+
+function getAddress(addr) {
+  addr = addr.split(':', 2);
+
+  return {
+    host: addr[0] || '0.0.0.0',
+    port: addr[1] || 44123
+  };
+};
+
+var local = getAddress(argv.local),
+    remote = getAddress(argv.remote);
+
+var server = vock.server.create();
+
+server.listen(local.port, local.host, function(err) {
+  if (err) throw err;
+  console.log('started listening on %s:%d', local.host, local.port);
+
+  server.connect(remote.port, remote.host, function(err) {
+    if (err) throw err;
+    console.log('connected to %s:%d', remote.host, remote.port);
+  });
+});

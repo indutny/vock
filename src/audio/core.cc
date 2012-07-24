@@ -4,6 +4,7 @@
 
 #include "node.h"
 #include "node_buffer.h"
+#include "speex/speex_echo.h"
 
 #include <string.h>
 #include <unistd.h>
@@ -33,7 +34,7 @@ static Persistent<String> ondata_sym;
 static Persistent<String> oninputready_sym;
 static Persistent<String> onoutputready_sym;
 
-Audio::Audio(Float64 rate, size_t input_chunk) : input_chunk_(input_chunk) {
+Audio::Audio(Float64 rate, size_t frame_size) : frame_size_(frame_size) {
   // Setup async callbacks
   if (uv_async_init(uv_default_loop(), &in_async_, InputAsyncCallback)) {
     abort();
@@ -54,12 +55,21 @@ Audio::Audio(Float64 rate, size_t input_chunk) : input_chunk_(input_chunk) {
   if (unit_->err != NULL) {
     ThrowException(String::New(unit_->err));
   }
+
+  // Init echo canceller
+  size_t sample_frame_size = frame_size / sizeof(int16_t);
+  echo_state_ = speex_echo_state_init_mc(sample_frame_size,
+                                         80 * sample_frame_size,
+                                         1,
+                                         1,
+                                         rate);
 }
 
 
 Audio::~Audio() {
   uv_close(reinterpret_cast<uv_handle_t*>(&in_async_), NULL);
   delete unit_;
+  speex_echo_state_destroy(echo_state_);
 }
 
 
@@ -126,13 +136,43 @@ Handle<Value> Audio::Enqueue(const Arguments& args) {
 }
 
 
+Handle<Value> Audio::CancelEcho(const Arguments& args) {
+  HandleScope scope;
+  Audio* a = ObjectWrap::Unwrap<Audio>(args.This());
+
+  if (args.Length() < 2 ||
+      !Buffer::HasInstance(args[0]) ||
+      !Buffer::HasInstance(args[1])) {
+    return scope.Close(ThrowException(String::New(
+        "First two arguments should be Buffers!")));
+  }
+
+  if (Buffer::Length(args[0].As<Object>()) != a->frame_size_ ||
+      Buffer::Length(args[1].As<Object>()) != a->frame_size_) {
+    return scope.Close(ThrowException(String::New(
+        "Buffers have incorrect size!")));
+  }
+
+  char* rec = Buffer::Data(args[0].As<Object>());
+  char* play = Buffer::Data(args[1].As<Object>());
+  Buffer* out = Buffer::New(Buffer::Length(args[1].As<Object>()));
+
+  speex_echo_cancellation(a->echo_state_,
+                          reinterpret_cast<int16_t*>(rec),
+                          reinterpret_cast<int16_t*>(play),
+                          reinterpret_cast<int16_t*>(Buffer::Data(out)));
+
+  return scope.Close(out->handle_);
+}
+
+
 void Audio::InputAsyncCallback(uv_async_t* async, int status) {
   HandleScope scope;
   Audio* a = container_of(async, Audio, in_async_);
 
   Buffer* buffer;
   for (;;) {
-    buffer = a->unit_->Read(a->input_chunk_);
+    buffer = a->unit_->Read(a->frame_size_);
     if (buffer == NULL) break;
 
     Handle<Value> argv[1] = { buffer->handle_ };
@@ -175,6 +215,7 @@ void Audio::Init(Handle<Object> target) {
   NODE_SET_PROTOTYPE_METHOD(t, "start", Audio::Start);
   NODE_SET_PROTOTYPE_METHOD(t, "stop", Audio::Stop);
   NODE_SET_PROTOTYPE_METHOD(t, "enqueue", Audio::Enqueue);
+  NODE_SET_PROTOTYPE_METHOD(t, "cancelEcho", Audio::CancelEcho);
 
   target->Set(String::NewSymbol("Audio"), t->GetFunction());
 }

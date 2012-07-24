@@ -1,9 +1,11 @@
 #ifndef _SRC_AUDIO_CORE_H_
 #define _SRC_AUDIO_CORE_H_
 
-#include "node.h"
 #include "au.h"
+
+#include "node.h"
 #include "node_object_wrap.h"
+#include "speex/speex_echo.h"
 
 namespace vock {
 namespace audio {
@@ -12,7 +14,7 @@ using namespace node;
 
 class Audio : public ObjectWrap {
  public:
-  Audio(Float64 rate, size_t input_chunk);
+  Audio(Float64 rate, size_t frame_size);
   ~Audio();
 
   static void Init(v8::Handle<v8::Object> target);
@@ -21,6 +23,7 @@ class Audio : public ObjectWrap {
   static v8::Handle<v8::Value> Start(const v8::Arguments& arg);
   static v8::Handle<v8::Value> Stop(const v8::Arguments& arg);
   static v8::Handle<v8::Value> Enqueue(const v8::Arguments& arg);
+  static v8::Handle<v8::Value> CancelEcho(const v8::Arguments& arg);
 
   static void InputAsyncCallback(uv_async_t* async, int status);
   static void InputReadyCallback(uv_async_t* async, int status);
@@ -28,7 +31,8 @@ class Audio : public ObjectWrap {
 
  protected:
   HALUnit* unit_;
-  size_t input_chunk_;
+  SpeexEchoState* echo_state_;
+  size_t frame_size_;
 
   uv_async_t in_async_;
   uv_async_t inready_async_;

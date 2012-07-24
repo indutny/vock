@@ -8,9 +8,8 @@
 class RingBuffer {
  public:
   struct Buffer {
-    char* start;
-    char* current;
-    char* end;
+    char* data;
+    size_t offset;
     size_t size;
 
     Buffer* prev;
@@ -26,7 +25,7 @@ class RingBuffer {
   ~RingBuffer() {
     Buffer* buffer = head_;
     do {
-      delete buffer->start;
+      delete[] buffer->data;
       delete buffer;
       buffer = buffer->next;
     } while (buffer != head_);
@@ -36,9 +35,9 @@ class RingBuffer {
     Buffer* result;
 
     result = new Buffer();
-    result->start = result->current = new char[size];
-    result->end = result->start + size;
-    result->size = 0;
+    result->data = new char[size];
+    result->size = size;
+    result->offset = 0;
 
     return result;
   }
@@ -51,9 +50,9 @@ class RingBuffer {
   inline char* Produce(size_t size) {
     size_ += size;
 
-    while (tail_->current + size > tail_->end) {
+    while (tail_->offset + size > tail_->size) {
       // If next buffer is free - move tail to it and reuse it!
-      if (tail_->next->size == 0 && tail_->next != head_) {
+      if (tail_->next->offset == 0 && tail_->next != head_) {
         tail_ = tail_->next;
       } else {
         // No free space is available in circle - allocate new buffer
@@ -70,10 +69,8 @@ class RingBuffer {
       }
     }
 
-    char* result = tail_->current;
-    tail_->current += size;
-    tail_->size += size;
-    fprintf(stdout, "put: %p %ld (%p:%p)\n", result, size, tail_, tail_->current);
+    char* result = tail_->data + tail_->offset;
+    tail_->offset += size;
     return result;
   }
 
@@ -82,15 +79,16 @@ class RingBuffer {
     Buffer* buffer = head_;
     do {
       // Copy data
-      memcpy(out, buffer->start, buffer->size);
-      out += buffer->size;
+      memcpy(out, buffer->data, buffer->offset);
+      out += buffer->offset;
 
       // Reset buffer
-      buffer->current = buffer->start;
-      buffer->size = 0;
+      buffer->offset = 0;
 
       buffer = buffer->next;
     } while (buffer != head_);
+
+    // Reset total size
     size_ = 0;
   }
 
@@ -107,19 +105,16 @@ class RingBuffer {
 
     written = bytes;
     while (bytes > 0) {
-      size_t to_write = bytes > head_->size ? head_->size : bytes;
-      memcpy(out, head_->start, to_write);
-      fprintf(stdout, "copy: %p %ld\n", head_->start, to_write);
+      size_t to_write = bytes > head_->offset ? head_->offset : bytes;
+      memcpy(out, head_->data, to_write);
 
       // Shift bytes in head if there are some bytes left
       if (to_write != head_->size) {
-        head_->size -= to_write;
-        fprintf(stdout, "move: %p <- %p\n", head_->start, head_->start + to_write);
-        memmove(head_->start, head_->start + to_write, head_->size);
+        head_->offset -= to_write;
+        memmove(head_->data, head_->data + to_write, head_->offset);
       } else {
         // Reset current head and move to the next one
-        head_->current = head_->start;
-        head_->size = 0;
+        head_->offset = 0;
         head_ = head_->next;
       }
 

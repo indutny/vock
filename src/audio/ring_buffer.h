@@ -1,11 +1,11 @@
-#ifndef _SRC_CIRCLE_H_
-#define _SRC_CIRCLE_H_
+#ifndef _SRC_RING_BUFFER_H_
+#define _SRC_RING_BUFFER_H_
 
 #include <stdlib.h> // NULL
 #include <string.h> // memcpy
 #include <sys/types.h> // size_t
 
-class Circle {
+class RingBuffer {
  public:
   struct Buffer {
     char* start;
@@ -17,13 +17,13 @@ class Circle {
     Buffer* next;
   };
 
-  Circle(size_t size) : default_size_(size) {
+  RingBuffer(size_t size) : default_size_(size) {
     head_ = tail_ = CreateBuffer(size);
     head_->prev = head_->next = head_;
     size_ = 0;
   }
 
-  ~Circle() {
+  ~RingBuffer() {
     Buffer* buffer = head_;
     do {
       delete buffer->start;
@@ -73,6 +73,7 @@ class Circle {
     char* result = tail_->current;
     tail_->current += size;
     tail_->size += size;
+    fprintf(stdout, "put: %p %ld (%p:%p)\n", result, size, tail_, tail_->current);
     return result;
   }
 
@@ -97,7 +98,7 @@ class Circle {
   inline size_t Fill(char* out, size_t bytes) {
     size_t written;
 
-    // Circle has less bytes than we must output
+    // Ring buffer has less bytes than we must output
     if (size_ < bytes) {
       written = Size();
       Flush(out);
@@ -108,10 +109,12 @@ class Circle {
     while (bytes > 0) {
       size_t to_write = bytes > head_->size ? head_->size : bytes;
       memcpy(out, head_->start, to_write);
+      fprintf(stdout, "copy: %p %ld\n", head_->start, to_write);
 
       // Shift bytes in head if there are some bytes left
       if (to_write != head_->size) {
         head_->size -= to_write;
+        fprintf(stdout, "move: %p <- %p\n", head_->start, head_->start + to_write);
         memmove(head_->start, head_->start + to_write, head_->size);
       } else {
         // Reset current head and move to the next one
@@ -135,4 +138,4 @@ class Circle {
   size_t default_size_;
 };
 
-#endif // _SRC_CIRCLE_H_
+#endif // _SRC_RING_BUFFER_H_

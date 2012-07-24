@@ -1,4 +1,4 @@
-#include "audio.h"
+#include "audio/core.h"
 #include "node_opus.h"
 
 #include "node.h"

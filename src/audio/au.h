@@ -1,30 +1,36 @@
-#ifndef _SRC_AUDIO_H_
-#define _SRC_AUDIO_H_
+#ifndef _SRC_AUDIO_AU_H_
+#define _SRC_AUDIO_AU_H_
 
 #include "node.h"
-#include "node_object_wrap.h"
-#include "circle.h"
-
 #include <AudioUnit/AudioUnit.h>
+
+#include "ring_buffer.h"
 
 namespace vock {
 namespace audio {
 
-using namespace node;
-
-class Audio : public ObjectWrap {
+class HALUnit {
  public:
-  Audio();
-  ~Audio();
+  enum UnitKind {
+    kInputUnit,
+    kOutputUnit
+  };
 
-  AudioUnit CreateAudioUnit(bool is_input);
+  HALUnit(Float64 rate, uv_async_t* input_cb);
+  ~HALUnit();
 
-  static void Init(v8::Handle<v8::Object> target);
+  int Start();
+  int Stop();
 
-  static v8::Handle<v8::Value> New(const v8::Arguments& arg);
-  static v8::Handle<v8::Value> Start(const v8::Arguments& arg);
-  static v8::Handle<v8::Value> Stop(const v8::Arguments& arg);
-  static v8::Handle<v8::Value> Enqueue(const v8::Arguments& arg);
+  size_t GetReadSize();
+  size_t Read(char* out);
+  void Put(char* data, size_t size);
+
+  const char* err;
+  OSStatus err_st;
+
+ protected:
+  AudioUnit CreateUnit(UnitKind kind, Float64 rate);
 
   static OSStatus InputCallback(void* arg,
                                 AudioUnitRenderActionFlags* flags,
@@ -39,25 +45,21 @@ class Audio : public ObjectWrap {
                                  UInt32 frame_count,
                                  AudioBufferList* data);
 
-  static void InputAsyncCallback(uv_async_t* async, int status);
-
- protected:
   static const int kInputBus = 1;
   static const int kOutputBus = 0;
 
-  AudioStreamBasicDescription desc_;
   AudioUnit in_unit_;
   AudioUnit out_unit_;
-  Circle in_buffer_;
-  Circle out_buffer_;
-  uv_mutex_t in_mutex_;
-  uv_mutex_t out_mutex_;
 
-  uv_async_t in_async_;
+  RingBuffer in_;
+  RingBuffer out_;
   AudioBufferList* blist_;
+
+  uv_async_t* input_cb_;
+  uv_mutex_t in_mutex_;
 };
 
 } // namespace audio
 } // namespace vock
 
-#endif // _SRC_AUDIO_H_
+#endif // _SRC_AUDIO_AU_H_

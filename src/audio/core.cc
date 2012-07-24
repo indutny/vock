@@ -59,7 +59,7 @@ Audio::Audio(Float64 rate, size_t frame_size) : frame_size_(frame_size) {
   // Init echo canceller
   size_t sample_frame_size = frame_size / sizeof(int16_t);
   echo_state_ = speex_echo_state_init_mc(sample_frame_size,
-                                         42 * sample_frame_size,
+                                         2 * 42 * sample_frame_size,
                                          1,
                                          1,
                                          rate);

@@ -1,8 +1,11 @@
 {
-  "name": "libopus",
+  "name": "vock",
   "version": "0.0.1",
   "private": true,
+
+  "bin": "bin/vock",
   "main": "lib/vock",
+
   "dependencies": {
     "node-gyp": "0.6.x",
     "optimist": "~0.3.4",

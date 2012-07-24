@@ -21,6 +21,7 @@ Frame types:
 * acpt
 * voic
 * ping
+* pong
 * clse
 
 
@@ -33,7 +34,7 @@ accept       ->
 voice        ->
             <-    voice
 ping         ->
-            <-    ping
+            <-    pong
 clse         ->
             <-    close
 ```

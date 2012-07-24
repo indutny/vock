@@ -51,7 +51,7 @@ Handle<Value> Opus::New(const Arguments& args) {
     return scope.Close(ThrowException(String::New("Incorrect arguments!")));
   }
 
-  Opus* o = new Opus(args[0]->IntegerValue(), args[1]->IntegerValue());
+  Opus* o = new Opus(args[0]->Int32Value(), args[1]->Int32Value());
   o->Wrap(args.Holder());
 
   return scope.Close(args.This());
@@ -113,8 +113,8 @@ Handle<Value> Opus::Decode(const Arguments& args) {
                     reinterpret_cast<const unsigned char*>(data),
                     len,
                     out,
-                    sizeof(out),
-                    1);
+                    sizeof(out) / sizeof(out[0]),
+                    0);
   if (ret < 0) {
     return scope.Close(THROW_OPUS_ERROR(ret));
   }

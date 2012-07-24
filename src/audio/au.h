@@ -17,14 +17,17 @@ class HALUnit {
     kOutputUnit
   };
 
-  HALUnit(Float64 rate, uv_async_t* input_cb);
+  HALUnit(Float64 rate,
+          uv_async_t* in_cb,
+          uv_async_t* inready_cb,
+          uv_async_t* outready_cb);
   ~HALUnit();
 
   int Start();
   int Stop();
 
   size_t GetReadSize();
-  node::Buffer* Read();
+  node::Buffer* Read(size_t size);
   void Put(char* data, size_t size);
 
   const char* err;
@@ -56,7 +59,12 @@ class HALUnit {
   RingBuffer out_ring_;
   AudioBufferList* blist_;
 
-  uv_async_t* input_cb_;
+  uv_async_t* in_cb_;
+  uv_async_t* inready_cb_;
+  uv_async_t* outready_cb_;
+  bool inready_;
+  bool outready_;
+
   uv_mutex_t in_mutex_;
   uv_mutex_t out_mutex_;
 };

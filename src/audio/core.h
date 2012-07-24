@@ -12,7 +12,7 @@ using namespace node;
 
 class Audio : public ObjectWrap {
  public:
-  Audio(Float64 rate);
+  Audio(Float64 rate, size_t input_chunk);
   ~Audio();
 
   static void Init(v8::Handle<v8::Object> target);
@@ -23,11 +23,16 @@ class Audio : public ObjectWrap {
   static v8::Handle<v8::Value> Enqueue(const v8::Arguments& arg);
 
   static void InputAsyncCallback(uv_async_t* async, int status);
+  static void InputReadyCallback(uv_async_t* async, int status);
+  static void OutputReadyCallback(uv_async_t* async, int status);
 
  protected:
   HALUnit* unit_;
+  size_t input_chunk_;
 
   uv_async_t in_async_;
+  uv_async_t inready_async_;
+  uv_async_t outready_async_;
 };
 
 } // namespace audio

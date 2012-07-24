@@ -21,10 +21,17 @@ namespace audio {
 
 using node::Buffer;
 
-HALUnit::HALUnit(Float64 rate, uv_async_t* input_cb) : err(NULL),
-                                                       in_ring_(100 * 1024),
-                                                       out_ring_(100 * 1024),
-                                                       input_cb_(input_cb) {
+HALUnit::HALUnit(Float64 rate,
+                 uv_async_t* in_cb,
+                 uv_async_t* inready_cb,
+                 uv_async_t* outready_cb) : err(NULL),
+                                            in_ring_(100 * 1024),
+                                            out_ring_(100 * 1024),
+                                            in_cb_(in_cb),
+                                            inready_cb_(inready_cb),
+                                            outready_cb_(outready_cb),
+                                            inready_(false),
+                                            outready_(false) {
   in_unit_ = CreateUnit(kInputUnit, rate);
   out_unit_ = CreateUnit(kOutputUnit, rate);
   if (uv_mutex_init(&in_mutex_)) abort();
@@ -93,8 +100,7 @@ AudioUnit HALUnit::CreateUnit(UnitKind kind, Float64 rate) {
   memset(&asbd, 0, sizeof(asbd));
   asbd.mSampleRate = rate;
   asbd.mFormatID = kAudioFormatLinearPCM;
-  asbd.mFormatFlags = kLinearPCMFormatFlagIsSignedInteger |
-                      kLinearPCMFormatFlagIsPacked;
+  asbd.mFormatFlags = kLinearPCMFormatFlagIsSignedInteger;
   asbd.mChannelsPerFrame = 1;
   asbd.mBitsPerChannel = 16;
   asbd.mFramesPerPacket = 1;
@@ -184,6 +190,12 @@ OSStatus HALUnit::InputCallback(void* arg,
                                 AudioBufferList* data) {
   HALUnit* unit = reinterpret_cast<HALUnit*>(arg);
 
+  // Send "ready" callback
+  if (!unit->inready_) {
+    unit->inready_ = true;
+    uv_async_send(unit->inready_cb_);
+  }
+
   uv_mutex_lock(&unit->in_mutex_);
   AudioBufferList list;
   list.mNumberBuffers = 1;
@@ -193,11 +205,14 @@ OSStatus HALUnit::InputCallback(void* arg,
 
   OSStatus st = AudioUnitRender(unit->in_unit_,
                                 flags, ts, bus, frame_count, &list);
-  if (st != noErr) abort();
+  if (st != noErr) {
+    fprintf(stderr, "Failed to read from input buffer\n");
+    unit->Stop();
+  }
   uv_mutex_unlock(&unit->in_mutex_);
 
   // Send message to event-loop's thread
-  uv_async_send(unit->input_cb_);
+  uv_async_send(unit->in_cb_);
 
   return st;
 }
@@ -210,6 +225,12 @@ OSStatus HALUnit::OutputCallback(void* arg,
                                  UInt32 frame_count,
                                  AudioBufferList* data) {
   HALUnit* unit = reinterpret_cast<HALUnit*>(arg);
+
+  // Send "ready" callback
+  if (!unit->outready_) {
+    unit->outready_ = true;
+    uv_async_send(unit->outready_cb_);
+  }
 
   char* buff = reinterpret_cast<char*>(data->mBuffers[0].mData);
   size_t size = frame_count * 2;
@@ -228,6 +249,9 @@ OSStatus HALUnit::OutputCallback(void* arg,
 
 int HALUnit::Start() {
   OSStatus st;
+
+  inready_ = false;
+  outready_ = false;
 
   st = AudioOutputUnitStart(in_unit_);
   if (st != noErr) return -1;
@@ -249,11 +273,15 @@ int HALUnit::Stop() {
 }
 
 
-Buffer* HALUnit::Read() {
+Buffer* HALUnit::Read(size_t size) {
   uv_mutex_lock(&in_mutex_);
 
-  Buffer* result = Buffer::New(in_ring_.Size());
-  in_ring_.Flush(Buffer::Data(result));
+  Buffer* result = NULL;
+
+  if (in_ring_.Size() >= size) {
+    result = Buffer::New(size == 0 ? in_ring_.Size() : size);
+    in_ring_.Fill(Buffer::Data(result), size);
+  }
 
   uv_mutex_unlock(&in_mutex_);
   return result;

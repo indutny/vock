@@ -10,5 +10,6 @@
 #define USE_ALLOCA            1
 
 #define OPUS_BUILD            1
+#define FIXED_POINT           1
 
 #endif CONFIG_H

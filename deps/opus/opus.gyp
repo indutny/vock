@@ -1,6 +1,6 @@
 {
   "variables": {
-    "opus_build_type%": "float"
+    "opus_build_type%": "fixed"
   },
   "targets": [
     {

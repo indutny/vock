@@ -1,13 +1,19 @@
 var vock = require('./build/Release/vock'),
-    fs = require('fs'),
     Buffer = require('buffer').Buffer;
 
-var audio = new vock.Audio(),
+var audio = new vock.Audio(48000, 960),
     buffers = [];
 
 audio.ondata = function(buffer) {
-  audio.enqueue(buffer);
 };
 
-console.log('start');
+audio.oninputready = function() {
+  console.log('input ready ' + +new Date());
+};
+
+audio.onoutputready = function() {
+  console.log('output ready ' + +new Date());
+};
+
 audio.start();
+console.log('start');

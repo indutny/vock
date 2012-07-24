@@ -106,7 +106,7 @@ Handle<Value> Opus::Decode(const Arguments& args) {
   char* data = Buffer::Data(args[0].As<Object>());
   size_t len = Buffer::Length(args[0].As<Object>());
 
-  opus_int16 out[100 * 1024];
+  opus_int16 out[10 * 1024];
   opus_int16 ret;
 
   ret = opus_decode(o->dec_,

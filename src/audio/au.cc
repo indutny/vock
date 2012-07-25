@@ -4,6 +4,8 @@
 #include "node_buffer.h"
 
 #include <AudioUnit/AudioUnit.h>
+#include <AudioToolbox/AudioToolbox.h>
+#include <speex/speex_resampler.h>
 #include <string.h> // memset
 
 #define CHECK(fn, msg)\
@@ -36,12 +38,25 @@ HALUnit::HALUnit(Float64 rate,
   out_unit_ = CreateUnit(kOutputUnit, rate);
   if (uv_mutex_init(&in_mutex_)) abort();
   if (uv_mutex_init(&out_mutex_)) abort();
+
+  if (rate != input_rate_) {
+    int err;
+    resampler_ = speex_resampler_init(1,
+                                      input_rate_,
+                                      rate,
+                                      SPEEX_RESAMPLER_QUALITY_VOIP,
+                                      &err);
+    if (resampler_ == NULL) abort();
+  } else {
+    resampler_ = NULL;
+  }
 }
 
 
 HALUnit::~HALUnit() {
   if (in_unit_ != NULL) AudioUnitUninitialize(in_unit_);
   if (out_unit_ != NULL) AudioUnitUninitialize(out_unit_);
+  if (resampler_ != NULL) speex_resampler_destroy(resampler_);
   uv_mutex_destroy(&in_mutex_);
   uv_mutex_destroy(&out_mutex_);
 }
@@ -96,9 +111,67 @@ AudioUnit HALUnit::CreateUnit(UnitKind kind, Float64 rate) {
           "Failed to set output callback")
   }
 
+  // Enable IO
+  CHECK(AudioUnitSetProperty(unit,
+                             kAudioOutputUnitProperty_EnableIO,
+                             kAudioUnitScope_Input,
+                             kInputBus,
+                             kind == kInputUnit ? &enable : &disable,
+                             sizeof(enable)),
+        "Failed to enable IO for input")
+  CHECK(AudioUnitSetProperty(unit,
+                             kAudioOutputUnitProperty_EnableIO,
+                             kAudioUnitScope_Output,
+                             kOutputBus,
+                             kind == kInputUnit ? &disable : &enable,
+                             sizeof(enable)),
+        "Failed to enable IO for output")
+
   // Set formats
   memset(&asbd, 0, sizeof(asbd));
-  asbd.mSampleRate = rate;
+
+  if (kind == kInputUnit) {
+    // Attach device to the input
+    AudioDeviceID device = kAudioObjectUnknown;
+    UInt32 size = sizeof(device);
+
+    AudioObjectPropertyAddress addr = {
+      kAudioHardwarePropertyDefaultInputDevice,
+      kAudioObjectPropertyScopeGlobal,
+      kAudioObjectPropertyElementMaster
+    };
+
+    CHECK(AudioObjectGetPropertyData(kAudioObjectSystemObject,
+                                     &addr,
+                                     0,
+                                     NULL,
+                                     &size,
+                                     &device),
+          "Failed to get default input device")
+    CHECK(AudioUnitSetProperty(unit,
+                               kAudioOutputUnitProperty_CurrentDevice,
+                               kAudioUnitScope_Global,
+                               0,
+                               &device,
+                               size),
+          "Failed to set default device")
+
+    // Get device's sample rate
+    size = sizeof(input_rate_);
+    CHECK(AudioUnitGetProperty(unit,
+                               kAudioUnitProperty_SampleRate,
+                               kAudioUnitScope_Input,
+                               kInputBus,
+                               &input_rate_,
+                               &size),
+          "Failed to set input's format")
+
+    // Use device's native sample rate
+    asbd.mSampleRate = input_rate_;
+  } else if (kind == kOutputUnit) {
+    asbd.mSampleRate = rate;
+  }
+
   asbd.mFormatID = kAudioFormatLinearPCM;
   asbd.mFormatFlags = kLinearPCMFormatFlagIsSignedInteger;
   asbd.mChannelsPerFrame = 1;
@@ -126,46 +199,7 @@ AudioUnit HALUnit::CreateUnit(UnitKind kind, Float64 rate) {
           "Failed to set output's format")
   }
 
-  // Enable IO
-  CHECK(AudioUnitSetProperty(unit,
-                             kAudioOutputUnitProperty_EnableIO,
-                             kAudioUnitScope_Input,
-                             kInputBus,
-                             kind == kInputUnit ? &enable : &disable,
-                             sizeof(enable)),
-        "Failed to enable IO for input")
-  CHECK(AudioUnitSetProperty(unit,
-                             kAudioOutputUnitProperty_EnableIO,
-                             kAudioUnitScope_Output,
-                             kOutputBus,
-                             kind == kInputUnit ? &disable : &enable,
-                             sizeof(enable)),
-        "Failed to enable IO for output")
-
-  // Attach device to the input
   if (kind == kInputUnit) {
-    AudioDeviceID device = kAudioObjectUnknown;
-    UInt32 size = sizeof(device);
-    AudioObjectPropertyAddress addr = {
-      kAudioHardwarePropertyDefaultInputDevice,
-      kAudioObjectPropertyScopeGlobal,
-      kAudioObjectPropertyElementMaster
-    };
-
-    CHECK(AudioObjectGetPropertyData(kAudioObjectSystemObject,
-                                     &addr,
-                                     0,
-                                     NULL,
-                                     &size,
-                                     &device),
-          "Failed to get default input device")
-    CHECK(AudioUnitSetProperty(unit,
-                               kAudioOutputUnitProperty_CurrentDevice,
-                               kAudioUnitScope_Global,
-                               0,
-                               &device,
-                               size),
-          "Failed to set default device")
   }
 
   CHECK(AudioUnitSetProperty(unit,
@@ -206,7 +240,7 @@ OSStatus HALUnit::InputCallback(void* arg,
   OSStatus st = AudioUnitRender(unit->in_unit_,
                                 flags, ts, bus, frame_count, &list);
   if (st != noErr) {
-    fprintf(stderr, "Failed to read from input buffer\n");
+    fprintf(stderr, "Failed to read from input buffer (%d)\n", st);
     unit->Stop();
   }
   uv_mutex_unlock(&unit->in_mutex_);
@@ -278,9 +312,44 @@ Buffer* HALUnit::Read(size_t size) {
 
   Buffer* result = NULL;
 
-  if (in_ring_.Size() >= size) {
-    result = Buffer::New(size == 0 ? in_ring_.Size() : size);
-    in_ring_.Fill(Buffer::Data(result), size);
+  size_t read_size = size == 0 ? in_ring_.Size() : size;
+  size_t need_size;
+
+  if (resampler_ == NULL) {
+    need_size = read_size;
+  } else {
+    uint32_t num, denum;
+
+    speex_resampler_get_ratio(resampler_, &num, &denum);
+    need_size = (read_size * num) / denum;
+  }
+
+  if (in_ring_.Size() >= need_size) {
+    result = Buffer::New(read_size);
+
+    if (resampler_ == NULL) {
+      in_ring_.Fill(Buffer::Data(result), size);
+    } else {
+      char tmp[10 * 1024];
+      spx_uint32_t tmp_samples;
+      spx_uint32_t out_samples;
+      int r;
+
+      in_ring_.Fill(tmp, need_size);
+
+      // Get size in samples
+      tmp_samples = need_size / sizeof(int16_t);
+      out_samples = size / sizeof(int16_t);
+      r = speex_resampler_process_int(
+          resampler_,
+          0,
+          reinterpret_cast<spx_int16_t*>(tmp),
+          &tmp_samples,
+          reinterpret_cast<spx_int16_t*>(Buffer::Data(result)),
+          &out_samples);
+
+      if (r) abort();
+    }
   }
 
   uv_mutex_unlock(&in_mutex_);

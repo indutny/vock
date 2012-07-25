@@ -6,6 +6,8 @@
 #include "ring_buffer.h"
 
 #include <AudioUnit/AudioUnit.h>
+#include <AudioToolbox/AudioToolbox.h>
+#include <speex/speex_resampler.h>
 
 namespace vock {
 namespace audio {
@@ -54,6 +56,9 @@ class HALUnit {
 
   AudioUnit in_unit_;
   AudioUnit out_unit_;
+  Float64 input_rate_;
+
+  SpeexResamplerState* resampler_;
 
   RingBuffer in_ring_;
   RingBuffer out_ring_;

@@ -79,7 +79,7 @@ Handle<Value> Audio::New(const Arguments& args) {
 
   if (args.Length() < 2 || !args[0]->IsNumber() || !args[1]->IsNumber()) {
     return scope.Close(ThrowException(String::New(
-        "First argument should be number")));
+        "First two arguments should be numbers")));
   }
 
   // Second argument is in msec

@@ -8,6 +8,7 @@
 
 #include <string.h>
 #include <unistd.h>
+#include <math.h> // sqrt
 
 namespace vock {
 namespace audio {
@@ -166,6 +167,62 @@ Handle<Value> Audio::CancelEcho(const Arguments& args) {
 }
 
 
+Handle<Value> Audio::GetRms(const Arguments& args) {
+  HandleScope scope;
+
+  if (args.Length() < 1 || !Buffer::HasInstance(args[0])) {
+    return scope.Close(ThrowException(String::New(
+        "First two arguments should be Buffers!")));
+  }
+
+  int16_t* data = reinterpret_cast<int16_t*>(
+      Buffer::Data(args[0].As<Object>()));
+  size_t len = Buffer::Length(args[0].As<Object>()) / sizeof(int16_t);
+
+  if (len == 0 || (len & sizeof(int16_t)) != 0) {
+    return scope.Close(ThrowException(String::New(
+        "Buffer has incorrect size!")));
+  }
+
+  double rms = 0;
+  for (size_t i = 0; i < len; i++) {
+    double sample = static_cast<double>(data[i]);
+    rms += sample * sample;
+  }
+  rms /= len;
+  rms = sqrt(rms);
+
+  return scope.Close(Number::New(rms));
+}
+
+
+Handle<Value> Audio::ApplyGain(const Arguments& args) {
+  HandleScope scope;
+
+  if (args.Length() < 2 || !Buffer::HasInstance(args[0]) ||
+      !args[1]->IsNumber()) {
+    return scope.Close(ThrowException(String::New(
+        "First two arguments should be Buffers!")));
+  }
+
+  int16_t* in = reinterpret_cast<int16_t*>(
+      Buffer::Data(args[0].As<Object>()));
+  size_t len = Buffer::Length(args[0].As<Object>()) / sizeof(int16_t);
+
+  if (len == 0 || (len & sizeof(int16_t)) != 0) {
+    return scope.Close(ThrowException(String::New(
+        "Buffer has incorrect size!")));
+  }
+  double gain = args[1]->NumberValue();
+
+  for (size_t i = 0; i < len; i++) {
+    in[i] = in[i] * gain;
+  }
+
+  return scope.Close(Null());
+}
+
+
 void Audio::InputAsyncCallback(uv_async_t* async, int status) {
   HandleScope scope;
   Audio* a = container_of(async, Audio, in_async_);
@@ -216,6 +273,8 @@ void Audio::Init(Handle<Object> target) {
   NODE_SET_PROTOTYPE_METHOD(t, "stop", Audio::Stop);
   NODE_SET_PROTOTYPE_METHOD(t, "enqueue", Audio::Enqueue);
   NODE_SET_PROTOTYPE_METHOD(t, "cancelEcho", Audio::CancelEcho);
+  NODE_SET_PROTOTYPE_METHOD(t, "getRms", Audio::GetRms);
+  NODE_SET_PROTOTYPE_METHOD(t, "applyGain", Audio::ApplyGain);
 
   target->Set(String::NewSymbol("Audio"), t->GetFunction());
 }

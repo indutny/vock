@@ -12,4 +12,4 @@
 #define OPUS_BUILD            1
 #define FIXED_POINT           1
 
-#endif CONFIG_H
+#endif // CONFIG_H

@@ -1,4 +1,4 @@
-var binding = require('./build/Release/vock');
+var binding = require('../build/Release/vock');
 
 var a = new binding.Audio(8000, 960);
 a.ondata = function(data) {

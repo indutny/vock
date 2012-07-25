@@ -6,6 +6,7 @@ var vock = require('..'),
         .usage('Usage: $0 --local :44123 --remote 192.168.0.2:44123')
         .alias('l', 'local')
         .alias('r', 'remote')
+        .alias('m', 'mute')
         .demand(['local', 'remote'])
         .argv;
 
@@ -21,7 +22,7 @@ function getAddress(addr) {
 var local = getAddress(argv.local),
     remote = getAddress(argv.remote);
 
-var server = vock.server.create();
+var server = vock.server.create(argv);
 
 server.listen(local.port, local.host, function(err) {
   if (err) throw err;

@@ -32,10 +32,11 @@ using v8::FunctionTemplate;
 using v8::ThrowException;
 
 static Persistent<String> ondata_sym;
-static Persistent<String> oninputready_sym;
-static Persistent<String> onoutputready_sym;
 
-Audio::Audio(Float64 rate, size_t frame_size) : frame_size_(frame_size) {
+Audio::Audio(Float64 rate, size_t frame_size) : frame_size_(frame_size),
+                                                input_ready_(false),
+                                                output_ready_(false),
+                                                active_(false) {
   // Setup async callbacks
   if (uv_async_init(uv_default_loop(), &in_async_, InputAsyncCallback)) {
     abort();
@@ -52,9 +53,10 @@ Audio::Audio(Float64 rate, size_t frame_size) : frame_size_(frame_size) {
 
   // Init Hardware abstraction layer's unit
   unit_ = new HALUnit(rate, &in_async_, &inready_async_, &outready_async_);
-
-  if (unit_->err != NULL) {
+  if (unit_->Init()) {
     ThrowException(String::New(unit_->err));
+    delete unit_;
+    return;
   }
 
   // Init echo canceller
@@ -94,6 +96,11 @@ Handle<Value> Audio::Start(const Arguments& args) {
   HandleScope scope;
   Audio* a = ObjectWrap::Unwrap<Audio>(args.This());
 
+  if (a->active_) {
+    return scope.Close(ThrowException(String::New(
+        "Unit is already started!")));
+  }
+
   if (a->unit_->Start()) {
     return scope.Close(ThrowException(String::New(
         "Failed to start unit!")));
@@ -101,6 +108,7 @@ Handle<Value> Audio::Start(const Arguments& args) {
 
   uv_ref(reinterpret_cast<uv_handle_t*>(&a->in_async_));
   a->Ref();
+  a->active_ = true;
 
   return scope.Close(Null());
 }
@@ -110,12 +118,20 @@ Handle<Value> Audio::Stop(const Arguments& args) {
   HandleScope scope;
   Audio* a = ObjectWrap::Unwrap<Audio>(args.This());
 
+  if (a->active_) {
+    return scope.Close(ThrowException(String::New(
+        "Unit is already stopped!")));
+  }
+
   if (a->unit_->Stop()) {
     return scope.Close(ThrowException(String::New(
         "Failed to stop unit!")));
   }
   uv_unref(reinterpret_cast<uv_handle_t*>(&a->in_async_));
   a->Unref();
+  a->input_ready_ = false;
+  a->output_ready_ = false;
+  a->active_ = false;
 
   return scope.Close(Null());
 }
@@ -232,8 +248,10 @@ void Audio::InputAsyncCallback(uv_async_t* async, int status) {
     buffer = a->unit_->Read(a->frame_size_);
     if (buffer == NULL) break;
 
-    Handle<Value> argv[1] = { buffer->handle_ };
-    MakeCallback(a->handle_, ondata_sym, 1, argv);
+    if (a->input_ready_ && a->output_ready_) {
+      Handle<Value> argv[1] = { buffer->handle_ };
+      MakeCallback(a->handle_, ondata_sym, 1, argv);
+    }
   }
 }
 
@@ -242,8 +260,7 @@ void Audio::InputReadyCallback(uv_async_t* async, int status) {
   HandleScope scope;
   Audio* a = container_of(async, Audio, inready_async_);
 
-  Handle<Value> argv[0] = {};
-  MakeCallback(a->handle_, oninputready_sym, 0, argv);
+  a->input_ready_ = true;
 }
 
 
@@ -251,8 +268,7 @@ void Audio::OutputReadyCallback(uv_async_t* async, int status) {
   HandleScope scope;
   Audio* a = container_of(async, Audio, outready_async_);
 
-  Handle<Value> argv[0] = {};
-  MakeCallback(a->handle_, onoutputready_sym, 0, argv);
+  a->output_ready_ = true;
 }
 
 
@@ -260,9 +276,6 @@ void Audio::Init(Handle<Object> target) {
   HandleScope scope;
 
   ondata_sym = Persistent<String>::New(String::NewSymbol("ondata"));
-  oninputready_sym = Persistent<String>::New(String::NewSymbol("oninputready"));
-  onoutputready_sym = Persistent<String>::New(
-      String::NewSymbol("onoutputready"));
 
   Local<FunctionTemplate> t = FunctionTemplate::New(Audio::New);
 

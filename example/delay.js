@@ -6,6 +6,4 @@ a.ondata = function(data) {
     a.enqueue(data);
   }, 1000);
 };
-a.oninputready = function() {};
-a.onoutputready = function() {};
 a.start();

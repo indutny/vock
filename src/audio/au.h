@@ -25,6 +25,8 @@ class HALUnit {
           uv_async_t* outready_cb);
   ~HALUnit();
 
+  int Init();
+
   int Start();
   int Stop();
 
@@ -56,6 +58,7 @@ class HALUnit {
 
   AudioUnit in_unit_;
   AudioUnit out_unit_;
+  Float64 rate_;
   Float64 input_rate_;
 
   SpeexResamplerState* resampler_;

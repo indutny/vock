@@ -27,6 +27,8 @@ HALUnit::HALUnit(Float64 rate,
                  uv_async_t* in_cb,
                  uv_async_t* inready_cb,
                  uv_async_t* outready_cb) : err(NULL),
+                                            err_st(noErr),
+                                            rate_(rate),
                                             in_ring_(100 * 1024),
                                             out_ring_(100 * 1024),
                                             in_cb_(in_cb),
@@ -34,22 +36,40 @@ HALUnit::HALUnit(Float64 rate,
                                             outready_cb_(outready_cb),
                                             inready_(false),
                                             outready_(false) {
-  in_unit_ = CreateUnit(kInputUnit, rate);
-  out_unit_ = CreateUnit(kOutputUnit, rate);
   if (uv_mutex_init(&in_mutex_)) abort();
   if (uv_mutex_init(&out_mutex_)) abort();
+}
 
-  if (rate != input_rate_) {
+
+int HALUnit::Init() {
+  in_unit_ = CreateUnit(kInputUnit, rate_);
+  if (in_unit_ == NULL) return -1;
+  out_unit_ = CreateUnit(kOutputUnit, rate_);
+  if (out_unit_ == NULL) {
+    AudioUnitUninitialize(in_unit_);
+    in_unit_ = NULL;
+    return -1;
+  }
+
+  if (rate_ != input_rate_) {
     int err;
     resampler_ = speex_resampler_init(1,
                                       input_rate_,
-                                      rate,
+                                      rate_,
                                       SPEEX_RESAMPLER_QUALITY_VOIP,
                                       &err);
-    if (resampler_ == NULL) abort();
+    if (resampler_ == NULL) {
+      AudioUnitUninitialize(in_unit_);
+      AudioUnitUninitialize(out_unit_);
+      in_unit_ = NULL;
+      out_unit_ = NULL;
+      return -1;
+    }
   } else {
     resampler_ = NULL;
   }
+
+  return 0;
 }
 
 

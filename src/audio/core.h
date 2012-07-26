@@ -35,6 +35,9 @@ class Audio : public ObjectWrap {
   HALUnit* unit_;
   SpeexEchoState* echo_state_;
   size_t frame_size_;
+  bool input_ready_;
+  bool output_ready_;
+  bool active_;
 
   uv_async_t in_async_;
   uv_async_t inready_async_;

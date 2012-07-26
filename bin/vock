@@ -2,13 +2,17 @@
 // vim:syntax=javascript
 
 var vock = require('..'),
+    colors = require('colors'),
     argv = require('optimist')
-        .usage('Usage: $0 --local :44123 --remote 192.168.0.2:44123')
-        .alias('l', 'local')
-        .alias('r', 'remote')
+        .usage('Usage:\n' +
+               '   $0 create\n' +
+               '   $0 connect {id}\n\n' +
+               'Optional parameters:\n' +
+               '   --server serveraddr:port')
+        .alias('s', 'server')
         .alias('m', 'mute')
-        .demand(['local', 'remote'])
-        .argv;
+        .argv,
+    cmd = argv._[0];
 
 function getAddress(addr) {
   addr = addr.split(':', 2);
@@ -19,17 +23,44 @@ function getAddress(addr) {
   };
 };
 
-var local = getAddress(argv.local),
-    remote = getAddress(argv.remote);
+var instance = vock.instance.create(argv),
+    api = vock.api.create(getAddress(argv.s || 'api.vock.io:43210'),
+                          instance);
 
-var server = vock.server.create(argv);
-
-server.listen(local.port, local.host, function(err) {
-  if (err) throw err;
-  console.log('started listening on %s:%d', local.host, local.port);
-
-  server.connect(remote.port, remote.host, function(err) {
+if (cmd === 'create') {
+  api.create(function(err, id) {
     if (err) throw err;
-    console.log('connected to %s:%d', remote.host, remote.port);
+
+    console.log('Room created!'.green);
+    console.log('Run to connect to this session:');
+    console.log('  ' + process.argv[0] + ' connect ' + id);
+    console.log('Waiting for opponent...');
+
+    api.watch(id, function(err, addrs) {
+      if (err) throw err;
+
+      console.log('Opponent appeared: '.green + '%s %d',
+                  addrs[0].address,
+                  addrs[0].port);
+      instance.connect(addrs[0].port, addrs[0].address, function() {
+        console.log('Connected!'.green);
+      });
+    });
   });
-});
+  return;
+} else if (cmd === 'connect' && argv._[1]) {
+  api.connect(argv._[1], function(err, addrs) {
+    if (err) throw err;
+
+    console.log('Got opponent\'s address: '.green + '%s:%d',
+                addrs[0].address,
+                addrs[0].port);
+    instance.connect(addrs[0].port, addrs[0].address, function() {
+      console.log('Connected!'.green);
+    });
+  });
+  return;
+}
+
+require('optimist').showHelp()
+process.exit(0);

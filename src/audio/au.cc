@@ -24,6 +24,7 @@ namespace audio {
 using node::Buffer;
 
 HALUnit::HALUnit(Float64 rate,
+                 size_t peek_size,
                  uv_async_t* in_cb,
                  uv_async_t* inready_cb,
                  uv_async_t* outready_cb) : err(NULL),
@@ -31,6 +32,7 @@ HALUnit::HALUnit(Float64 rate,
                                             rate_(rate),
                                             in_ring_(100 * 1024),
                                             out_ring_(100 * 1024),
+                                            peek_size_(peek_size),
                                             in_cb_(in_cb),
                                             inready_cb_(inready_cb),
                                             outready_cb_(outready_cb),
@@ -38,6 +40,7 @@ HALUnit::HALUnit(Float64 rate,
                                             outready_(false) {
   if (uv_mutex_init(&in_mutex_)) abort();
   if (uv_mutex_init(&out_mutex_)) abort();
+  peek_buff_ = new char[peek_size_];
 }
 
 
@@ -79,6 +82,7 @@ HALUnit::~HALUnit() {
   if (resampler_ != NULL) speex_resampler_destroy(resampler_);
   uv_mutex_destroy(&in_mutex_);
   uv_mutex_destroy(&out_mutex_);
+  delete[] peek_buff_;
 }
 
 
@@ -289,10 +293,16 @@ OSStatus HALUnit::OutputCallback(void* arg,
   char* buff = reinterpret_cast<char*>(data->mBuffers[0].mData);
   size_t size = frame_count * 2;
   size_t written;
+  size_t peek_copy = unit->peek_size_ > size ? size : unit->peek_size_;
 
   uv_mutex_lock(&unit->out_mutex_);
   written = unit->out_ring_.Fill(buff, size);
   uv_mutex_unlock(&unit->out_mutex_);
+
+  memcpy(unit->peek_buff_, buff, peek_copy);
+  if (peek_copy < unit->peek_size_) {
+    memset(unit->peek_buff_ + peek_copy, 0, unit->peek_size_ - peek_copy);
+  }
 
   if (written < size) {
     memset(buff + written, 0, size - written);
@@ -378,11 +388,17 @@ Buffer* HALUnit::Read(size_t size) {
 
 
 void HALUnit::PeekOutput(char* data, size_t size) {
+  size_t copy_size = peek_size_ > size ? size : peek_size_;
+
   uv_mutex_lock(&out_mutex_);
 
-  out_ring_.Peek(data, size);
+  memcpy(data, peek_buff_, copy_size);
 
   uv_mutex_unlock(&out_mutex_);
+
+  if (copy_size < size) {
+    memset(data + copy_size, 0, size - copy_size);
+  }
 }
 
 

@@ -52,7 +52,11 @@ Audio::Audio(Float64 rate, size_t frame_size) : frame_size_(frame_size),
   uv_unref(reinterpret_cast<uv_handle_t*>(&outready_async_));
 
   // Init Hardware abstraction layer's unit
-  unit_ = new HALUnit(rate, &in_async_, &inready_async_, &outready_async_);
+  unit_ = new HALUnit(rate,
+                      frame_size,
+                      &in_async_,
+                      &inready_async_,
+                      &outready_async_);
   if (unit_->Init()) {
     ThrowException(String::New(unit_->err));
     delete unit_;
@@ -248,8 +252,10 @@ Handle<Value> Audio::PeekOutput(const Arguments& args) {
         "First argument should be Buffer!")));
   }
 
-  a->unit_->PeekOutput(Buffer::Data(args[0].As<Object>()),
-                       Buffer::Length(args[0].As<Object>()));
+  char* data = Buffer::Data(args[0].As<Object>());
+  size_t size = Buffer::Length(args[0].As<Object>());
+
+  a->unit_->PeekOutput(data, size);
 
   return scope.Close(Null());
 }

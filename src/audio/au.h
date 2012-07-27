@@ -20,6 +20,7 @@ class HALUnit {
   };
 
   HALUnit(Float64 rate,
+          size_t peek_size,
           uv_async_t* in_cb,
           uv_async_t* inready_cb,
           uv_async_t* outready_cb);
@@ -67,6 +68,9 @@ class HALUnit {
   RingBuffer in_ring_;
   RingBuffer out_ring_;
   AudioBufferList* blist_;
+
+  char* peek_buff_;
+  size_t peek_size_;
 
   uv_async_t* in_cb_;
   uv_async_t* inready_cb_;

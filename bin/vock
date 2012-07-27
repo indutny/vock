@@ -24,7 +24,7 @@ function getAddress(addr) {
 };
 
 var instance = vock.instance.create(argv),
-    api = vock.api.create(getAddress(argv.s || 'api.vock.io:43210'),
+    api = vock.api.create(getAddress(argv.s || 'vock.indutny.com:43210'),
                           instance);
 
 if (cmd === 'create') {
@@ -39,10 +39,11 @@ if (cmd === 'create') {
     api.watch(id, function(err, addrs) {
       if (err) throw err;
 
+      var target = addrs[addrs.length - 1];
       console.log('Opponent appeared: '.green + '%s %d',
-                  addrs[0].address,
-                  addrs[0].port);
-      instance.connect(addrs[0].port, addrs[0].address, function() {
+                  target.address,
+                  target.port);
+      instance.connect(target.port, target.address, function() {
         console.log('Connected!'.green);
       });
     });
@@ -52,10 +53,11 @@ if (cmd === 'create') {
   api.connect(argv._[1], function(err, addrs) {
     if (err) throw err;
 
+    var target = addrs[0];
     console.log('Got opponent\'s address: '.green + '%s:%d',
-                addrs[0].address,
-                addrs[0].port);
-    instance.connect(addrs[0].port, addrs[0].address, function() {
+                target.address,
+                target.port);
+    instance.connect(target.port, target.address, function() {
       console.log('Connected!'.green);
     });
   });

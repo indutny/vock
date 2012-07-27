@@ -239,6 +239,22 @@ Handle<Value> Audio::ApplyGain(const Arguments& args) {
 }
 
 
+Handle<Value> Audio::PeekOutput(const Arguments& args) {
+  HandleScope scope;
+  Audio* a = ObjectWrap::Unwrap<Audio>(args.This());
+
+  if (args.Length() < 1 || !Buffer::HasInstance(args[0])) {
+    return scope.Close(ThrowException(String::New(
+        "First argument should be Buffer!")));
+  }
+
+  a->unit_->PeekOutput(Buffer::Data(args[0].As<Object>()),
+                       Buffer::Length(args[0].As<Object>()));
+
+  return scope.Close(Null());
+}
+
+
 void Audio::InputAsyncCallback(uv_async_t* async, int status) {
   HandleScope scope;
   Audio* a = container_of(async, Audio, in_async_);
@@ -288,6 +304,7 @@ void Audio::Init(Handle<Object> target) {
   NODE_SET_PROTOTYPE_METHOD(t, "cancelEcho", Audio::CancelEcho);
   NODE_SET_PROTOTYPE_METHOD(t, "getRms", Audio::GetRms);
   NODE_SET_PROTOTYPE_METHOD(t, "applyGain", Audio::ApplyGain);
+  NODE_SET_PROTOTYPE_METHOD(t, "peekOutput", Audio::PeekOutput);
 
   target->Set(String::NewSymbol("Audio"), t->GetFunction());
 }

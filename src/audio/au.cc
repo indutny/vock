@@ -377,6 +377,15 @@ Buffer* HALUnit::Read(size_t size) {
 }
 
 
+void HALUnit::PeekOutput(char* data, size_t size) {
+  uv_mutex_lock(&out_mutex_);
+
+  out_ring_.Peek(data, size);
+
+  uv_mutex_unlock(&out_mutex_);
+}
+
+
 void HALUnit::Put(char* data, size_t size) {
   uv_mutex_lock(&out_mutex_);
 

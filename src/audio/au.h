@@ -33,6 +33,7 @@ class HALUnit {
   size_t GetReadSize();
   node::Buffer* Read(size_t size);
   void Put(char* data, size_t size);
+  void PeekOutput(char* data, size_t size);
 
   const char* err;
   OSStatus err_st;

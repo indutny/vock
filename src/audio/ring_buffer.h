@@ -92,6 +92,27 @@ class RingBuffer {
     size_ = 0;
   }
 
+  inline void Peek(char* out, size_t bytes) {
+    Buffer* current = head_;
+    size_t written = 0;
+
+    // Go through buffers and copy contents until buffer will be filled up
+    while (written < Size() && written < bytes) {
+      size_t to_write = bytes > current->offset ? current->offset : bytes;
+      memcpy(out, current->data, to_write);
+
+      current = current->next;
+
+      out += to_write;
+      written += to_write;
+    }
+
+    // Fill the rest with zeroes
+    if (written < bytes) {
+      memset(out, 0, bytes - written);
+    }
+  }
+
   // Fill buffer with as much data as we have
   inline size_t Fill(char* out, size_t bytes) {
     size_t written;

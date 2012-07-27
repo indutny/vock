@@ -1,7 +1,6 @@
 {
   "name": "vock",
   "version": "0.0.1",
-  "private": true,
   "bin": "bin/vock",
   "main": "lib/vock",
   "dependencies": {

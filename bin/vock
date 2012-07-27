@@ -43,8 +43,8 @@ getAddress(server, function(address, port) {
       if (err) throw err;
 
       console.log('Room created!'.green);
-      console.log('Run to connect to this session:');
-      console.log('  ' + process.argv[0] + ' connect ' + id);
+      console.log('Run this on other side:');
+      console.log('  vock connect ' + id);
       console.log('Waiting for opponent...');
 
       instance.api.watch(id, function(err, addrs) {
@@ -54,7 +54,7 @@ getAddress(server, function(address, port) {
         console.log('Opponent appeared: '.green + '%s %d',
                     target.address,
                     target.port);
-        instance.connect(argv._[1], target.port, target.address, function() {
+        instance.connect(id, target.port, target.address, function() {
           console.log('Connected!'.green);
         });
       });

@@ -1,6 +1,6 @@
 # Vock
 
-VoIP on node.js
+VoIP on node.js **(OSX ONLY FOR NOW)**
 
 ## Installing
 

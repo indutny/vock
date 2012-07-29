@@ -53,7 +53,6 @@ Audio::Audio(Float64 rate, size_t frame_size) : frame_size_(frame_size),
 
   // Init Hardware abstraction layer's unit
   unit_ = new HALUnit(rate,
-                      frame_size,
                       &in_async_,
                       &inready_async_,
                       &outready_async_);
@@ -243,24 +242,6 @@ Handle<Value> Audio::ApplyGain(const Arguments& args) {
 }
 
 
-Handle<Value> Audio::PeekOutput(const Arguments& args) {
-  HandleScope scope;
-  Audio* a = ObjectWrap::Unwrap<Audio>(args.This());
-
-  if (args.Length() < 1 || !Buffer::HasInstance(args[0])) {
-    return scope.Close(ThrowException(String::New(
-        "First argument should be Buffer!")));
-  }
-
-  char* data = Buffer::Data(args[0].As<Object>());
-  size_t size = Buffer::Length(args[0].As<Object>());
-
-  a->unit_->PeekOutput(data, size);
-
-  return scope.Close(Null());
-}
-
-
 void Audio::InputAsyncCallback(uv_async_t* async, int status) {
   HandleScope scope;
   Audio* a = container_of(async, Audio, in_async_);
@@ -310,7 +291,6 @@ void Audio::Init(Handle<Object> target) {
   NODE_SET_PROTOTYPE_METHOD(t, "cancelEcho", Audio::CancelEcho);
   NODE_SET_PROTOTYPE_METHOD(t, "getRms", Audio::GetRms);
   NODE_SET_PROTOTYPE_METHOD(t, "applyGain", Audio::ApplyGain);
-  NODE_SET_PROTOTYPE_METHOD(t, "peekOutput", Audio::PeekOutput);
 
   target->Set(String::NewSymbol("Audio"), t->GetFunction());
 }

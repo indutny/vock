@@ -20,7 +20,6 @@ class HALUnit {
   };
 
   HALUnit(Float64 rate,
-          size_t peek_size,
           uv_async_t* in_cb,
           uv_async_t* inready_cb,
           uv_async_t* outready_cb);
@@ -34,7 +33,6 @@ class HALUnit {
   size_t GetReadSize();
   node::Buffer* Read(size_t size);
   void Put(char* data, size_t size);
-  void PeekOutput(char* data, size_t size);
 
   const char* err;
   OSStatus err_st;
@@ -68,9 +66,6 @@ class HALUnit {
   RingBuffer in_ring_;
   RingBuffer out_ring_;
   AudioBufferList* blist_;
-
-  char* peek_buff_;
-  size_t peek_size_;
 
   uv_async_t* in_cb_;
   uv_async_t* inready_cb_;

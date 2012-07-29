@@ -1,5 +1,5 @@
 #include "au.h"
-#include "ring_buffer.h"
+#include "portaudio/pa_ringbuffer.h"
 #include "node.h"
 #include "node_buffer.h"
 
@@ -29,15 +29,27 @@ HALUnit::HALUnit(Float64 rate,
                  uv_async_t* outready_cb) : err(NULL),
                                             err_st(noErr),
                                             rate_(rate),
-                                            in_ring_(100 * 1024),
-                                            out_ring_(100 * 1024),
                                             in_cb_(in_cb),
                                             inready_cb_(inready_cb),
                                             outready_cb_(outready_cb),
                                             inready_(false),
                                             outready_(false) {
-  if (uv_mutex_init(&in_mutex_)) abort();
-  if (uv_mutex_init(&out_mutex_)) abort();
+  if (PaUtil_InitializeRingBuffer(&in_ring_,
+                                  2,
+                                  sizeof(in_ring_buf_) / 2,
+                                  in_ring_buf_) == -1) {
+    abort();
+  }
+  if (PaUtil_InitializeRingBuffer(&out_ring_,
+                                  2,
+                                  sizeof(out_ring_buf_) / 2,
+                                  out_ring_buf_)== -1) {
+    abort();
+  }
+
+  in_list_.mNumberBuffers = 1;
+  in_list_.mBuffers[0].mNumberChannels = 1;
+  in_list_.mBuffers[0].mData = &in_buff_;
 }
 
 
@@ -74,11 +86,14 @@ int HALUnit::Init() {
 
 
 HALUnit::~HALUnit() {
+  Stop();
+
   if (in_unit_ != NULL) AudioUnitUninitialize(in_unit_);
   if (out_unit_ != NULL) AudioUnitUninitialize(out_unit_);
   if (resampler_ != NULL) speex_resampler_destroy(resampler_);
-  uv_mutex_destroy(&in_mutex_);
-  uv_mutex_destroy(&out_mutex_);
+
+  PaUtil_FlushRingBuffer(&in_ring_);
+  PaUtil_FlushRingBuffer(&out_ring_);
 }
 
 
@@ -250,20 +265,19 @@ OSStatus HALUnit::InputCallback(void* arg,
     uv_async_send(unit->inready_cb_);
   }
 
-  uv_mutex_lock(&unit->in_mutex_);
-  AudioBufferList list;
-  list.mNumberBuffers = 1;
-  list.mBuffers[0].mData = unit->in_ring_.Produce(frame_count * 2);
-  list.mBuffers[0].mDataByteSize = frame_count * 2;
-  list.mBuffers[0].mNumberChannels = 1;
-
+  unit->in_list_.mBuffers[0].mDataByteSize = sizeof(unit->in_buff_);
   OSStatus st = AudioUnitRender(unit->in_unit_,
-                                flags, ts, bus, frame_count, &list);
+                                flags,
+                                ts,
+                                bus,
+                                frame_count,
+                                &unit->in_list_);
   if (st != noErr) {
     fprintf(stderr, "Failed to read from input buffer (%d)\n", st);
     unit->Stop();
   }
-  uv_mutex_unlock(&unit->in_mutex_);
+
+  PaUtil_WriteRingBuffer(&unit->in_ring_, unit->in_buff_, frame_count);
 
   // Send message to event-loop's thread
   uv_async_send(unit->in_cb_);
@@ -287,15 +301,15 @@ OSStatus HALUnit::OutputCallback(void* arg,
   }
 
   char* buff = reinterpret_cast<char*>(data->mBuffers[0].mData);
-  size_t size = frame_count * 2;
-  size_t written;
+  size_t available = PaUtil_GetRingBufferReadAvailable(&unit->out_ring_);
 
-  uv_mutex_lock(&unit->out_mutex_);
-  written = unit->out_ring_.Fill(buff, size);
-  uv_mutex_unlock(&unit->out_mutex_);
+  if (available > frame_count) available = frame_count;
 
-  if (written < size) {
-    memset(buff + written, 0, size - written);
+  size_t read = PaUtil_ReadRingBuffer(&unit->out_ring_, buff, available);
+
+  // Fill rest with zeroes
+  if (frame_count > read) {
+    memset(buff + read * 2, 0, (frame_count - read) * 2);
   }
   return noErr;
 }
@@ -328,62 +342,55 @@ int HALUnit::Stop() {
 
 
 Buffer* HALUnit::Read(size_t size) {
-  uv_mutex_lock(&in_mutex_);
-
   Buffer* result = NULL;
 
-  size_t read_size = size == 0 ? in_ring_.Size() : size;
   size_t need_size;
 
   if (resampler_ == NULL) {
-    need_size = read_size;
+    need_size = size;
   } else {
     uint32_t num, denum;
 
     speex_resampler_get_ratio(resampler_, &num, &denum);
-    need_size = (read_size * num) / denum;
+    need_size = (size * num) / denum;
   }
 
-  if (in_ring_.Size() >= need_size) {
-    result = Buffer::New(read_size);
+  // Not enough data in ring
+  size_t available = PaUtil_GetRingBufferReadAvailable(&in_ring_);
+  if (available * 2 < need_size) return result;
 
-    if (resampler_ == NULL) {
-      in_ring_.Fill(Buffer::Data(result), size);
-    } else {
-      char tmp[10 * 1024];
-      spx_uint32_t tmp_samples;
-      spx_uint32_t out_samples;
-      int r;
+  result = Buffer::New(size);
 
-      in_ring_.Fill(tmp, need_size);
+  if (resampler_ == NULL) {
+    PaUtil_ReadRingBuffer(&in_ring_, Buffer::Data(result), size / 2);
+  } else {
+    char tmp[10 * 1024];
+    spx_uint32_t tmp_samples;
+    spx_uint32_t out_samples;
+    int r;
 
-      // Get size in samples
-      tmp_samples = need_size / sizeof(int16_t);
-      out_samples = size / sizeof(int16_t);
-      r = speex_resampler_process_int(
-          resampler_,
-          0,
-          reinterpret_cast<spx_int16_t*>(tmp),
-          &tmp_samples,
-          reinterpret_cast<spx_int16_t*>(Buffer::Data(result)),
-          &out_samples);
+    PaUtil_ReadRingBuffer(&in_ring_, tmp, need_size / 2);
 
-      if (r) abort();
-    }
+    // Get size in samples
+    tmp_samples = need_size / sizeof(int16_t);
+    out_samples = size / sizeof(int16_t);
+    r = speex_resampler_process_int(
+        resampler_,
+        0,
+        reinterpret_cast<spx_int16_t*>(tmp),
+        &tmp_samples,
+        reinterpret_cast<spx_int16_t*>(Buffer::Data(result)),
+        &out_samples);
+
+    if (r) abort();
   }
 
-  uv_mutex_unlock(&in_mutex_);
   return result;
 }
 
 
 void HALUnit::Put(char* data, size_t size) {
-  uv_mutex_lock(&out_mutex_);
-
-  char* out = out_ring_.Produce(size);
-  memcpy(out, data, size);
-
-  uv_mutex_unlock(&out_mutex_);
+  PaUtil_WriteRingBuffer(&out_ring_, data, size / 2);
 }
 
 } // namespace audio

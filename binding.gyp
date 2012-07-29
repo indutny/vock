@@ -16,6 +16,7 @@
 
       "sources": [
         "src/node_opus.cc",
+        "src/audio/portaudio/pa_ringbuffer.c",
         "src/audio/au.cc",
         "src/audio/core.cc",
         "src/vock.cc",

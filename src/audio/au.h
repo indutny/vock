@@ -3,7 +3,7 @@
 
 #include "node.h"
 #include "node_buffer.h"
-#include "ring_buffer.h"
+#include "portaudio/pa_ringbuffer.h"
 
 #include <AudioUnit/AudioUnit.h>
 #include <AudioToolbox/AudioToolbox.h>
@@ -63,18 +63,20 @@ class HALUnit {
 
   SpeexResamplerState* resampler_;
 
-  RingBuffer in_ring_;
-  RingBuffer out_ring_;
-  AudioBufferList* blist_;
+  PaUtilRingBuffer in_ring_;
+  PaUtilRingBuffer out_ring_;
+  // NOTE: Should be a power of two
+  int16_t in_ring_buf_[128 * 1024];
+  int16_t out_ring_buf_[128 * 1024];
+
+  char in_buff_[10 * 1024];
+  AudioBufferList in_list_;
 
   uv_async_t* in_cb_;
   uv_async_t* inready_cb_;
   uv_async_t* outready_cb_;
   bool inready_;
   bool outready_;
-
-  uv_mutex_t in_mutex_;
-  uv_mutex_t out_mutex_;
 };
 
 } // namespace audio

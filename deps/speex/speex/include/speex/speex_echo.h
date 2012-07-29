@@ -83,7 +83,7 @@ SpeexEchoState *speex_echo_state_init(int frame_size, int filter_length);
  * @param nb_speakers Number of speaker channels
  * @return Newly-created echo canceller state
  */
-SpeexEchoState *speex_echo_state_init_mc(int frame_size, int filter_length, int nb_mic, int nb_speakers, spx_int32_t sampling_rate);
+SpeexEchoState *speex_echo_state_init_mc(int frame_size, int filter_length, int nb_mic, int nb_speakers);
 
 /** Destroys an echo canceller state 
  * @param st Echo canceller state

@@ -15,6 +15,8 @@
         "deps/speex/speex/include",
       ],
 
+      "libraries": [ "-lpthread" ],
+
       "sources": [
         "src/opus/binding.cc",
         "src/audio/portaudio/pa_ringbuffer.c",

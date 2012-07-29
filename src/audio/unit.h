@@ -15,6 +15,7 @@ namespace audio {
 class HALUnit {
  public:
   HALUnit(double rate,
+          size_t frame_size,
           uv_async_t* in_cb,
           uv_async_t* inready_cb,
           uv_async_t* outready_cb);
@@ -30,20 +31,33 @@ class HALUnit {
  protected:
   static void InputCallback(void* arg, size_t bytes);
   static void OutputCallback(void* arg, char* out, size_t bytes);
+  static void* EchoCancelLoop(void* arg);
+
+  size_t frame_size_;
+
+  // Echo canceller thread
+  pthread_t canceller_thread_;
+  uv_sem_t canceller_sem_;
 
   PlatformUnit in_unit_;
   PlatformUnit out_unit_;
 
   SpeexResamplerState* resampler_;
+  SpeexEchoState* canceller_;
 
+  PaUtilRingBuffer cancel_ring_;
   PaUtilRingBuffer in_ring_;
   PaUtilRingBuffer out_ring_;
+  PaUtilRingBuffer used_ring_;
 
   // NOTE: Should be a power of two
+  int16_t cancel_ring_buf_[128 * 1024];
   int16_t in_ring_buf_[128 * 1024];
   int16_t out_ring_buf_[128 * 1024];
+  int16_t used_ring_buf_[128 * 1024];
 
-  char in_buff_[10 * 1024];
+  // buffer for Render function
+  char mic_buff_[10 * 1024];
 
   uv_async_t* in_cb_;
   uv_async_t* inready_cb_;

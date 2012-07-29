@@ -401,10 +401,10 @@ static void dump_audio(const spx_int16_t *rec, const spx_int16_t *play, const sp
 /** Creates a new echo canceller state */
 EXPORT SpeexEchoState *speex_echo_state_init(int frame_size, int filter_length)
 {
-   return speex_echo_state_init_mc(frame_size, filter_length, 1, 1, 8000);
+   return speex_echo_state_init_mc(frame_size, filter_length, 1, 1);
 }
 
-EXPORT SpeexEchoState *speex_echo_state_init_mc(int frame_size, int filter_length, int nb_mic, int nb_speakers, spx_int32_t sampling_rate)
+EXPORT SpeexEchoState *speex_echo_state_init_mc(int frame_size, int filter_length, int nb_mic, int nb_speakers)
 {
    int i,N,M, C, K;
    SpeexEchoState *st = (SpeexEchoState *)speex_alloc(sizeof(SpeexEchoState));
@@ -430,7 +430,7 @@ EXPORT SpeexEchoState *speex_echo_state_init_mc(int frame_size, int filter_lengt
    st->saturated = 0;
    st->screwed_up = 0;
    /* This is the default sampling rate */
-   st->sampling_rate = sampling_rate;
+   st->sampling_rate = 8000;
    st->spec_average = DIV32_16(SHL32(EXTEND32(st->frame_size), 15), st->sampling_rate);
 #ifdef FIXED_POINT
    st->beta0 = DIV32_16(SHL32(EXTEND32(st->frame_size), 16), st->sampling_rate);

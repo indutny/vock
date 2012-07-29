@@ -52,6 +52,7 @@ Audio::Audio(Float64 rate, size_t frame_size) : frame_size_(frame_size),
 
   // Init Hardware abstraction layer's unit
   unit_ = new HALUnit(rate,
+                      frame_size,
                       &in_async_,
                       &inready_async_,
                       &outready_async_);

@@ -1,5 +1,5 @@
-#include "audio/core.h"
-#include "node_opus.h"
+#include "audio/binding.h"
+#include "opus/binding.h"
 
 #include "node.h"
 

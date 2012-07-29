@@ -1,10 +1,9 @@
-#include "core.h"
-#include "au.h"
+#include "binding.h"
+#include "unit.h"
 #include "common.h"
 
 #include "node.h"
 #include "node_buffer.h"
-#include "speex/speex_echo.h"
 
 #include <string.h>
 #include <unistd.h>
@@ -56,26 +55,12 @@ Audio::Audio(Float64 rate, size_t frame_size) : frame_size_(frame_size),
                       &in_async_,
                       &inready_async_,
                       &outready_async_);
-  if (unit_->Init()) {
-    ThrowException(String::New(unit_->err));
-    delete unit_;
-    return;
-  }
-
-  // Init echo canceller
-  size_t sample_frame_size = frame_size / sizeof(int16_t);
-  echo_state_ = speex_echo_state_init_mc(sample_frame_size,
-                                         2 * 42 * sample_frame_size,
-                                         1,
-                                         1,
-                                         rate);
 }
 
 
 Audio::~Audio() {
   uv_close(reinterpret_cast<uv_handle_t*>(&in_async_), NULL);
   delete unit_;
-  speex_echo_state_destroy(echo_state_);
 }
 
 
@@ -104,10 +89,7 @@ Handle<Value> Audio::Start(const Arguments& args) {
         "Unit is already started!")));
   }
 
-  if (a->unit_->Start()) {
-    return scope.Close(ThrowException(String::New(
-        "Failed to start unit!")));
-  }
+  a->unit_->Start();
 
   uv_ref(reinterpret_cast<uv_handle_t*>(&a->in_async_));
   a->Ref();
@@ -126,10 +108,8 @@ Handle<Value> Audio::Stop(const Arguments& args) {
         "Unit is already stopped!")));
   }
 
-  if (a->unit_->Stop()) {
-    return scope.Close(ThrowException(String::New(
-        "Failed to stop unit!")));
-  }
+  a->unit_->Stop();
+
   uv_unref(reinterpret_cast<uv_handle_t*>(&a->in_async_));
   a->Unref();
   a->input_ready_ = false;
@@ -153,36 +133,6 @@ Handle<Value> Audio::Enqueue(const Arguments& args) {
                 Buffer::Length(args[0].As<Object>()));
 
   return scope.Close(Null());
-}
-
-
-Handle<Value> Audio::CancelEcho(const Arguments& args) {
-  HandleScope scope;
-  Audio* a = ObjectWrap::Unwrap<Audio>(args.This());
-
-  if (args.Length() < 2 ||
-      !Buffer::HasInstance(args[0]) ||
-      !Buffer::HasInstance(args[1])) {
-    return scope.Close(ThrowException(String::New(
-        "First two arguments should be Buffers!")));
-  }
-
-  if (Buffer::Length(args[0].As<Object>()) != a->frame_size_ ||
-      Buffer::Length(args[1].As<Object>()) != a->frame_size_) {
-    return scope.Close(ThrowException(String::New(
-        "Buffers have incorrect size!")));
-  }
-
-  char* rec = Buffer::Data(args[0].As<Object>());
-  char* play = Buffer::Data(args[1].As<Object>());
-  Buffer* out = Buffer::New(Buffer::Length(args[1].As<Object>()));
-
-  speex_echo_cancellation(a->echo_state_,
-                          reinterpret_cast<int16_t*>(rec),
-                          reinterpret_cast<int16_t*>(play),
-                          reinterpret_cast<int16_t*>(Buffer::Data(out)));
-
-  return scope.Close(out->handle_);
 }
 
 
@@ -288,7 +238,6 @@ void Audio::Init(Handle<Object> target) {
   NODE_SET_PROTOTYPE_METHOD(t, "start", Audio::Start);
   NODE_SET_PROTOTYPE_METHOD(t, "stop", Audio::Stop);
   NODE_SET_PROTOTYPE_METHOD(t, "enqueue", Audio::Enqueue);
-  NODE_SET_PROTOTYPE_METHOD(t, "cancelEcho", Audio::CancelEcho);
   NODE_SET_PROTOTYPE_METHOD(t, "getRms", Audio::GetRms);
   NODE_SET_PROTOTYPE_METHOD(t, "applyGain", Audio::ApplyGain);
 

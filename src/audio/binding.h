@@ -1,11 +1,10 @@
-#ifndef _SRC_AUDIO_CORE_H_
-#define _SRC_AUDIO_CORE_H_
+#ifndef _SRC_AUDIO_BINDING_H_
+#define _SRC_AUDIO_BINDING_H_
 
-#include "au.h"
+#include "unit.h"
 
 #include "node.h"
 #include "node_object_wrap.h"
-#include "speex/speex_echo.h"
 
 namespace vock {
 namespace audio {
@@ -23,7 +22,6 @@ class Audio : public ObjectWrap {
   static v8::Handle<v8::Value> Start(const v8::Arguments& arg);
   static v8::Handle<v8::Value> Stop(const v8::Arguments& arg);
   static v8::Handle<v8::Value> Enqueue(const v8::Arguments& arg);
-  static v8::Handle<v8::Value> CancelEcho(const v8::Arguments& arg);
   static v8::Handle<v8::Value> GetRms(const v8::Arguments& arg);
   static v8::Handle<v8::Value> ApplyGain(const v8::Arguments& arg);
 
@@ -33,7 +31,6 @@ class Audio : public ObjectWrap {
 
  protected:
   HALUnit* unit_;
-  SpeexEchoState* echo_state_;
   size_t frame_size_;
   bool input_ready_;
   bool output_ready_;
@@ -47,4 +44,4 @@ class Audio : public ObjectWrap {
 } // namespace audio
 } // namespace vock
 
-#endif // _SRC_AUDIO_CORE_H_
+#endif // _SRC_AUDIO_BINDING_H_

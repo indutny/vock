@@ -1,4 +1,4 @@
-#include "node_opus.h"
+#include "binding.h"
 
 #include "node.h"
 #include "node_buffer.h"

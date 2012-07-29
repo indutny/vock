@@ -1,5 +1,5 @@
-#ifndef _SRC_NODE_OPUS_H_
-#define _SRC_NODE_OPUS_H_
+#ifndef _SRC_OPUS_BINDING_H_
+#define _SRC_OPUS_BINDING_H_
 
 #include "node.h"
 #include "v8.h"
@@ -32,4 +32,4 @@ class Opus : public ObjectWrap {
 } // namespace opus
 } // namespace vock
 
-#endif // _SRC_NODE_OPUS_H_
+#endif // _SRC_OPUS_BINDING_H_

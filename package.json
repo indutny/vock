@@ -1,6 +1,16 @@
 {
   "name": "vock",
   "version": "0.0.4",
+
+  "author": "Fedor Indutny <fedor@indutny.com>",
+  "homepage": "https://github.com/indutny/vock",
+  "repository": {
+    "type": "git",
+    "url": "http://github.com/indutny/vock.git"
+  },
+  "os": [ "darwin" ],
+  "preferGlobal": true,
+
   "bin": "bin/vock",
   "main": "lib/vock",
   "dependencies": {

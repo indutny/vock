@@ -6,10 +6,11 @@ var vock = require('..'),
     colors = require('colors'),
     argv = require('optimist')
         .usage('Usage:\n' +
-               '   $0 create\n' +
-               '   $0 connect {id}\n\n' +
-               'Optional parameters:\n' +
-               '   --server serveraddr:port')
+               '   vock create\n' +
+               '   vock connect {id}')
+        .describe('server', 'Server address (host:port)')
+        .describe('mute', 'Disable recording')
+        .boolean('mute')
         .alias('s', 'server')
         .alias('m', 'mute')
         .argv,

@@ -98,13 +98,25 @@ Handle<Value> Opus::Decode(const Arguments& args) {
 
   UNWRAP
 
-  if (args.Length() < 1 || !Buffer::HasInstance(args[0])) {
+  if (args.Length() < 1 ||
+      (!Buffer::HasInstance(args[0]) && !args[0]->IsNull())) {
     return scope.Close(ThrowException(String::New(
             "First argument should be Buffer")));
   }
 
-  char* data = Buffer::Data(args[0].As<Object>());
-  size_t len = Buffer::Length(args[0].As<Object>());
+  char* data;
+  size_t len;
+
+  if (Buffer::HasInstance(args[0])) {
+    data = Buffer::Data(args[0].As<Object>());
+    len = Buffer::Length(args[0].As<Object>());
+  } else if (args[0]->IsNull()) {
+    data = NULL;
+    len = 0;
+  } else {
+    return scope.Close(ThrowException(String::New(
+            "Unsupported argument!")));
+  }
 
   opus_int16 out[10 * 1024];
   opus_int16 ret;

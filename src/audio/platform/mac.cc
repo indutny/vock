@@ -1,5 +1,6 @@
 #include "mac.h"
 
+#include <stdint.h>
 #include <AudioUnit/AudioUnit.h>
 #include <AudioToolbox/AudioToolbox.h>
 
@@ -158,6 +159,27 @@ PlatformUnit::PlatformUnit(Kind kind, double rate) : rate_(rate) {
                              &disable,
                              sizeof(disable)),
         "Input: ShouldAllocateBuffer failed")
+
+  // Low latency = small buffer
+  uint32_t frame_size = rate / 100;
+  if (kind == kInputUnit) {
+    CHECK(AudioUnitSetProperty(unit_,
+                               kAudioDevicePropertyBufferFrameSize,
+                               kAudioUnitScope_Output,
+                               kInputBus,
+                               &frame_size,
+                               sizeof(frame_size)),
+          "Input: failed to set buffer frame size")
+  } else if (kind == kOutputUnit) {
+    CHECK(AudioUnitSetProperty(unit_,
+                               kAudioDevicePropertyBufferFrameSize,
+                               kAudioUnitScope_Input,
+                               kOutputBus,
+                               &frame_size,
+                               sizeof(frame_size)),
+          "Output: failed to set buffer frame size")
+  }
+
 
   // Initialize Unit
   CHECK(AudioUnitInitialize(unit_), "Failed to initialize unit")

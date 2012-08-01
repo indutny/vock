@@ -8,6 +8,7 @@
 
 #include <speex/speex_resampler.h>
 #include <speex/speex_echo.h>
+#include <speex/speex_preprocess.h>
 
 namespace vock {
 namespace audio {
@@ -44,6 +45,7 @@ class HALUnit {
 
   SpeexResamplerState* resampler_;
   SpeexEchoState* canceller_;
+  SpeexPreprocessState* preprocess_;
 
   PaUtilRingBuffer cancel_ring_;
   PaUtilRingBuffer in_ring_;

@@ -5,6 +5,8 @@
 
 #include <speex/speex_resampler.h>
 #include <speex/speex_echo.h>
+#include <speex/speex_preprocess.h>
+
 #include <pthread.h> // pthread_t
 #include <string.h> // memset
 
@@ -72,8 +74,10 @@ HALUnit::HALUnit(double rate,
     resampler_ = NULL;
   }
 
+  size_t sample_size = frame_size / 2;
+
   // Init echo cancellation
-  canceller_ = speex_echo_state_init(frame_size / 2, (frame_size / 2) * 23);
+  canceller_ = speex_echo_state_init(sample_size, sample_size * 23);
   if (canceller_ == NULL) {
     fprintf(stderr, "Failed to allocate echo canceller!\n");
     abort();
@@ -82,6 +86,13 @@ HALUnit::HALUnit(double rate,
   int irate = rate;
   if (speex_echo_ctl(canceller_, SPEEX_ECHO_SET_SAMPLING_RATE, &irate) != 0) {
     fprintf(stderr, "Failed to set echo canceller's rate!\n");
+    abort();
+  }
+
+  // Init speex preprocessor
+  preprocess_ = speex_preprocess_state_init(sample_size, rate);
+  if (preprocess_ == NULL) {
+    fprintf(stderr, "Failed to allocate preprocessor!\n");
     abort();
   }
 
@@ -94,6 +105,7 @@ HALUnit::HALUnit(double rate,
 HALUnit::~HALUnit() {
   if (resampler_ != NULL) speex_resampler_destroy(resampler_);
   speex_echo_state_destroy(canceller_);
+  speex_preprocess_state_destroy(preprocess_);
 
   PaUtil_FlushRingBuffer(&cancel_ring_);
   PaUtil_FlushRingBuffer(&in_ring_);
@@ -227,6 +239,9 @@ void* HALUnit::EchoCancelLoop(void* arg) {
                               reinterpret_cast<spx_int16_t*>(rec),
                               reinterpret_cast<spx_int16_t*>(used),
                               reinterpret_cast<spx_int16_t*>(tmp));
+
+      // Apply preprocessor
+      speex_preprocess_run(u->preprocess_, reinterpret_cast<spx_int16_t*>(tmp));
 
       // Put resampled and cancelled frame into in_ring
       PaUtil_WriteRingBuffer(&u->in_ring_, tmp, u->frame_size_ / 2);

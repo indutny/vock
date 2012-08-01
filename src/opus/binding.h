@@ -21,6 +21,7 @@ class Opus : public ObjectWrap {
   static v8::Handle<v8::Value> New(const v8::Arguments& args);
   static v8::Handle<v8::Value> Encode(const v8::Arguments& args);
   static v8::Handle<v8::Value> Decode(const v8::Arguments& args);
+  static v8::Handle<v8::Value> SetBitrate(const v8::Arguments& args);
 
  protected:
   opus_int32 rate_;

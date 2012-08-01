@@ -124,6 +124,23 @@ Handle<Value> Opus::Decode(const Arguments& args) {
 }
 
 
+Handle<Value> Opus::SetBitrate(const Arguments& args) {
+  HandleScope scope;
+
+  UNWRAP
+
+  if (args.Length() < 1 || !args[0]->IsNumber()) {
+    return scope.Close(ThrowException(String::New(
+            "First argument should be Buffer")));
+  }
+
+  // TODO: Consider checking return value there?
+  opus_encoder_ctl(o->enc_, OPUS_SET_BITRATE(args[0]->Int32Value()));
+
+  return scope.Close(Null());
+}
+
+
 void Opus::Init(Handle<Object> target) {
   HandleScope scope;
 
@@ -134,6 +151,7 @@ void Opus::Init(Handle<Object> target) {
 
   NODE_SET_PROTOTYPE_METHOD(t, "encode", Opus::Encode);
   NODE_SET_PROTOTYPE_METHOD(t, "decode", Opus::Decode);
+  NODE_SET_PROTOTYPE_METHOD(t, "setBitrate", Opus::SetBitrate);
 
   target->Set(String::NewSymbol("Opus"), t->GetFunction());
 }

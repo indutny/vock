@@ -73,9 +73,15 @@ HALUnit::HALUnit(double rate,
   }
 
   // Init echo cancellation
-  canceller_ = speex_echo_state_init(frame_size, frame_size * 23);
+  canceller_ = speex_echo_state_init(frame_size / 2, (frame_size / 2) * 23);
   if (canceller_ == NULL) {
     fprintf(stderr, "Failed to allocate echo canceller!\n");
+    abort();
+  }
+
+  int irate = rate;
+  if (speex_echo_ctl(canceller_, SPEEX_ECHO_SET_SAMPLING_RATE, &irate) != 0) {
+    fprintf(stderr, "Failed to set echo canceller's rate!\n");
     abort();
   }
 
@@ -224,10 +230,10 @@ void* HALUnit::EchoCancelLoop(void* arg) {
 
       // Put resampled and cancelled frame into in_ring
       PaUtil_WriteRingBuffer(&u->in_ring_, tmp, u->frame_size_ / 2);
-    }
 
-    // Send message to event-loop's thread
-    uv_async_send(u->in_cb_);
+      // Send message to event-loop's thread
+      uv_async_send(u->in_cb_);
+    }
   }
 
   return NULL;

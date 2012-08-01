@@ -1,6 +1,8 @@
 var binding = require('../build/Release/vock');
 
-var a = new binding.Audio(8000, 960);
+var rate = 8000,
+    a = new binding.Audio(rate, rate / 100);
+
 a.ondata = function(data) {
   setTimeout(function() {
     a.enqueue(data);

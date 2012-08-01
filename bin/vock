@@ -10,7 +10,10 @@ var vock = require('..'),
                '   vock connect {id}')
         .describe('server', 'Server address (host:port)')
         .describe('mute', 'Disable recording')
+        .describe('version', 'Show CLI version')
         .boolean('mute')
+        .boolean('version')
+        .alias('v', 'version')
         .alias('s', 'server')
         .alias('m', 'mute')
         .argv,
@@ -32,8 +35,14 @@ function getAddress(addr, callback) {
   });
 };
 
-var server = argv.server || argv.s || 'vock.indutny.com:43210';
+// Show version
+if (argv.version) {
+  console.log('vock v%s', vock.version);
+  process.exit(0);
+}
 
+// Get server's IP and perform actions!
+var server = argv.server || argv.s || 'vock.indutny.com:43210';
 getAddress(server, function(address, port) {
   argv.server = { address: address, port: port };
 

@@ -2,6 +2,8 @@
 
 VoIP on node.js 0.8.x **(OSX ONLY FOR NOW)**
 
+Join #vock on irc.freenode.net if you have any questions!
+
 ## Installing
 
 ```bash

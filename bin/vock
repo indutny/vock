@@ -4,6 +4,7 @@
 var vock = require('..'),
     dns = require('dns'),
     colors = require('colors'),
+    prompt = require('prompt'),
     argv = require('optimist')
         .usage('Usage:\n' +
                '   vock create\n' +
@@ -41,6 +42,30 @@ if (argv.version) {
   process.exit(0);
 }
 
+prompt.start();
+prompt.message = '';
+prompt.delimiter = '';
+
+function print() {
+  var args = Array.prototype.slice.call(arguments);
+  if (print.paused) {
+    print.queue.push(args);
+    return;
+  }
+
+  console.log.apply(console, args);
+};
+print.paused = false;
+print.queue = [];
+
+// Resume printing
+print.resume = function() {
+  print.paused = false;
+  print.queue.forEach(function(args) {
+    console.log.apply(console, args);
+  });
+};
+
 // Get server's IP and perform actions!
 var server = argv.server || argv.s || 'vock.indutny.com:43210';
 getAddress(server, function(address, port) {
@@ -51,24 +76,40 @@ getAddress(server, function(address, port) {
     throw err;
   });
 
+  instance.on('authorize', function(fingerprint, callback) {
+    var property = {
+      name: 'authorized',
+      message: 'Accept ' + fingerprint + '?',
+      validatior: /y[es]*|n[o]?/,
+      warning: 'Must respond yes or no',
+      default: 'no'
+    };
+
+    print.paused = true;
+    prompt.get(property, function (err, result) {
+      callback(/y[es]*/.test(result.authorized));
+      print.resume();
+    });
+  });
+
   if (cmd === 'create') {
     instance.api.create(function(err, id) {
       if (err) throw err;
 
-      console.log('Room created!'.green);
-      console.log('Run this on other side:');
-      console.log('  vock connect ' + id);
-      console.log('Waiting for opponent...');
+      print('Room created!'.green);
+      print('Run this on other side:');
+      print('  vock connect ' + id);
+      print('Waiting for opponent...');
 
       instance.api.watch(id, function(err, addrs) {
         if (err) throw err;
 
         var target = addrs[addrs.length - 1];
-        console.log('Opponent appeared: '.green + '%s %d',
+        print('Opponent appeared: '.green + '%s %d',
                     target.address,
                     target.port);
         instance.connect(id, target.port, target.address, function() {
-          console.log('Connected!'.green);
+          print('Connected!'.green);
         });
       });
     });
@@ -78,11 +119,11 @@ getAddress(server, function(address, port) {
       if (err) throw err;
 
       var target = addrs[0];
-      console.log('Got opponent\'s address: '.green + '%s:%d',
+      print('Got opponent\'s address: '.green + '%s:%d',
                   target.address,
                   target.port);
       instance.connect(argv._[1], target.port, target.address, function() {
-        console.log('Connected!'.green);
+        print('Connected!'.green);
       });
     });
     return;

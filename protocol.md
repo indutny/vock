@@ -11,6 +11,8 @@ All frames are JSON packed with [msgpack module](https://github.com/pgriess/node
   "seq": 1,       // sequence number
   ...             // other packet data
 }
+||
+{ "enc": Encrypted buffer }
 ```
 
 ## Client <-> Client
@@ -28,9 +30,16 @@ Frame types:
 ```
     Client1      Client2
 hello        ->
+  * pub = p1
             <-    hello
+                     * pub = p2
             <-    accept
+                     * enc(p1, DH_public = d1)
 accept       ->
+  * enc(p2, d2)
+
+     BLOCK CIPHERED PART
+
 voice        ->
             <-    voice
 ping         ->

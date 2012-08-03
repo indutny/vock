@@ -47,11 +47,15 @@ HALUnit::HALUnit(double rate,
                                   sizeof(in_ring_buf_) / 2,
                                   in_ring_buf_);
   if (r == -1) abort();
-  r = PaUtil_InitializeRingBuffer(&out_ring_,
-                                  2,
-                                  sizeof(out_ring_buf_) / 2,
-                                  out_ring_buf_);
-  if (r == -1) abort();
+
+  for (int i = 0; i < kOutRingCount; i++) {
+    r = PaUtil_InitializeRingBuffer(&out_rings_[i],
+                                    2,
+                                    sizeof(out_rings_buf_[i]) / 2,
+                                    out_rings_buf_[i]);
+    if (r == -1) abort();
+  }
+
   r = PaUtil_InitializeRingBuffer(&used_ring_,
                                   2,
                                   sizeof(used_ring_buf_) / 2,
@@ -109,7 +113,9 @@ HALUnit::~HALUnit() {
 
   PaUtil_FlushRingBuffer(&cancel_ring_);
   PaUtil_FlushRingBuffer(&in_ring_);
-  PaUtil_FlushRingBuffer(&out_ring_);
+  for (int i = 0; i < kOutRingCount; i++) {
+    PaUtil_FlushRingBuffer(&out_rings_[i]);
+  }
   PaUtil_FlushRingBuffer(&used_ring_);
 
   pthread_cancel(canceller_thread_);
@@ -147,15 +153,32 @@ void HALUnit::OutputCallback(void* arg, char* out, size_t size) {
     uv_async_send(unit->outready_cb_);
   }
 
-  size_t available = PaUtil_GetRingBufferReadAvailable(&unit->out_ring_);
+  // Zero out buffer
+  memset(out, 0, size);
 
-  if (available * 2 > size) available = size / 2;
+  char tmp[10 * 1024];
+  for (int i = 0; i < kOutRingCount; i++) {
+    size_t available = PaUtil_GetRingBufferReadAvailable(&unit->out_rings_[i]);
 
-  size_t read = PaUtil_ReadRingBuffer(&unit->out_ring_, out, available);
+    if (available * 2 > size) available = size / 2;
 
-  // Fill rest with zeroes
-  if (size > read * 2) {
-    memset(out + read * 2, 0, size - read * 2);
+    size_t read = PaUtil_ReadRingBuffer(&unit->out_rings_[i], tmp, available);
+
+    // Fill rest with zeroes
+    if (size > read * 2) {
+      memset(tmp + read * 2, 0, size - read * 2);
+    }
+
+    // Mix-in into out buffer
+    int16_t* a = reinterpret_cast<int16_t*>(out);
+    int16_t* b = reinterpret_cast<int16_t*>(tmp);
+    for (size_t j = 0; j < size / 2; j++) {
+      if ((a[j] > 0 && b[j] > 0) || (a[j] < 0 && b[j] < 0)) {
+        a[j] = a[j] + b[j] - (a[j] * b[j]) / 32767;
+      } else {
+        a[j] = a[j] + b[j];
+      }
+    }
   }
 
   // Put data to the `used` ring
@@ -285,8 +308,8 @@ Buffer* HALUnit::Read(size_t size) {
 }
 
 
-void HALUnit::Put(char* data, size_t size) {
-  PaUtil_WriteRingBuffer(&out_ring_, data, size / 2);
+void HALUnit::Put(int index, char* data, size_t size) {
+  PaUtil_WriteRingBuffer(&out_rings_[index], data, size / 2);
 }
 
 } // namespace audio

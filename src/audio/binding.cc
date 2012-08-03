@@ -125,13 +125,15 @@ Handle<Value> Audio::Enqueue(const Arguments& args) {
   HandleScope scope;
   Audio* a = ObjectWrap::Unwrap<Audio>(args.This());
 
-  if (args.Length() < 1 || !Buffer::HasInstance(args[0])) {
+  if (args.Length() < 2 || !args[0]->IsNumber() ||
+      !Buffer::HasInstance(args[1])) {
     return scope.Close(ThrowException(String::New(
-        "First argument should be a Buffer!")));
+        "First argument should be a number, second - Buffer!")));
   }
 
-  a->unit_->Put(Buffer::Data(args[0].As<Object>()),
-                Buffer::Length(args[0].As<Object>()));
+  a->unit_->Put(args[0]->IntegerValue(),
+                Buffer::Data(args[1].As<Object>()),
+                Buffer::Length(args[1].As<Object>()));
 
   return scope.Close(Null());
 }

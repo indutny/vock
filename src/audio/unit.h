@@ -27,9 +27,12 @@ class HALUnit {
 
   size_t GetReadSize();
   node::Buffer* Read(size_t size);
-  void Put(char* data, size_t size);
+  void Put(int index, char* data, size_t size);
 
  protected:
+  static const int kOutRingCount = 64;
+  static const int kRingBufferSize = 64 * 1024;
+
   static void InputCallback(void* arg, size_t bytes);
   static void OutputCallback(void* arg, char* out, size_t bytes);
   static void* EchoCancelLoop(void* arg);
@@ -49,14 +52,14 @@ class HALUnit {
 
   PaUtilRingBuffer cancel_ring_;
   PaUtilRingBuffer in_ring_;
-  PaUtilRingBuffer out_ring_;
+  PaUtilRingBuffer out_rings_[kOutRingCount];
   PaUtilRingBuffer used_ring_;
 
   // NOTE: Should be a power of two
-  int16_t cancel_ring_buf_[128 * 1024];
-  int16_t in_ring_buf_[128 * 1024];
-  int16_t out_ring_buf_[128 * 1024];
-  int16_t used_ring_buf_[128 * 1024];
+  int16_t cancel_ring_buf_[kRingBufferSize];
+  int16_t in_ring_buf_[kRingBufferSize];
+  int16_t out_rings_buf_[kOutRingCount][kRingBufferSize];
+  int16_t used_ring_buf_[kRingBufferSize];
 
   // buffer for Render function
   char mic_buff_[10 * 1024];

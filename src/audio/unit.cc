@@ -309,6 +309,10 @@ Buffer* HALUnit::Read(size_t size) {
 
 
 void HALUnit::Put(int index, char* data, size_t size) {
+  if (index >= kOutRingCount || index < 0) {
+    fprintf(stderr, "Incorrect HALUnit out ring index: %d\n", index);
+    abort();
+  }
   PaUtil_WriteRingBuffer(&out_rings_[index], data, size / 2);
 }
 

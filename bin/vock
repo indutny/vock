@@ -2,9 +2,6 @@
 // vim:syntax=javascript
 
 var vock = require('..'),
-    dns = require('dns'),
-    colors = require('colors'),
-    prompt = require('prompt'),
     argv = require('optimist')
         .usage('Usage:\n' +
                '   vock create\n' +
@@ -17,118 +14,6 @@ var vock = require('..'),
         .alias('v', 'version')
         .alias('s', 'server')
         .alias('m', 'mute')
-        .argv,
-    cmd = argv._[0];
+        .argv;
 
-function getAddress(addr, callback) {
-  addr = addr.split(':', 2);
-
-  var host = addr[0] || '0.0.0.0',
-      port = addr[1] || 44123;
-
-  dns.lookup(host, function(err, address) {
-    if (err) {
-      console.error('Failed to find server %s:%d'.red, host, port);
-      process.exit(1);
-    }
-
-    callback(address, port);
-  });
-};
-
-// Show version
-if (argv.version) {
-  console.log('vock v%s', vock.version);
-  process.exit(0);
-}
-
-prompt.start();
-prompt.message = '';
-prompt.delimiter = '';
-
-function print() {
-  var args = Array.prototype.slice.call(arguments);
-  if (print.paused) {
-    print.queue.push(args);
-    return;
-  }
-
-  console.log.apply(console, args);
-};
-print.paused = false;
-print.queue = [];
-
-// Resume printing
-print.resume = function() {
-  print.paused = false;
-  print.queue.forEach(function(args) {
-    console.log.apply(console, args);
-  });
-};
-
-// Get server's IP and perform actions!
-var server = argv.server || argv.s || 'vock.indutny.com:43210';
-getAddress(server, function(address, port) {
-  argv.server = { address: address, port: port };
-
-  var instance = vock.instance.create(argv);
-  instance.on('error', function(err) {
-    throw err;
-  });
-
-  instance.on('authorize', function(fingerprint, callback) {
-    var property = {
-      name: 'authorized',
-      message: 'Accept ' + fingerprint + '?',
-      validatior: /y[es]*|n[o]?/,
-      warning: 'Must respond yes or no',
-      default: 'no'
-    };
-
-    print.paused = true;
-    prompt.get(property, function (err, result) {
-      callback(/y[es]*/.test(result.authorized));
-      print.resume();
-    });
-  });
-
-  if (cmd === 'create') {
-    instance.api.create(function(err, id) {
-      if (err) throw err;
-
-      print('Room created!'.green);
-      print('Run this on other side:');
-      print('  vock connect ' + id);
-      print('Waiting for opponent...');
-
-      instance.api.watch(id, function(err, addrs) {
-        if (err) throw err;
-
-        var target = addrs[addrs.length - 1];
-        print('Opponent appeared: '.green + '%s %d',
-                    target.address,
-                    target.port);
-        instance.connect(id, target.port, target.address, function() {
-          print('Connected!'.green);
-        });
-      });
-    });
-    return;
-  } else if (cmd === 'connect' && argv._[1]) {
-    instance.api.connect(argv._[1], function(err, addrs) {
-      if (err) throw err;
-
-      var target = addrs[0];
-      print('Got opponent\'s address: '.green + '%s:%d',
-                  target.address,
-                  target.port);
-      instance.connect(argv._[1], target.port, target.address, function() {
-        print('Connected!'.green);
-      });
-    });
-    return;
-  }
-
-  require('optimist').showHelp()
-  process.exit(0);
-});
+vock.cli.run(argv);

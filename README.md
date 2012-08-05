@@ -25,6 +25,18 @@ On other side:
 $ vock connect cf94de1a0edd65d19c9071ed9bbf562a0e1e32a3
 ```
 
+## Encryption
+
+Vock is using RSA private key for initial handshake to encrypt
+[Diffie-Hellman](http://en.wikipedia.org/wiki/Diffie%E2%80%93Hellman_key_exchange)
+public keys. All further communication is performed under AES-256 encryption.
+
+By default, Vock is using RSA private key located at ~/.ssh/id_rsa. If you get
+`Private key should be loaded first` error, please ensure that you have key at
+this place and, if your key has secured with password, that `VOCK_KEY_PASSWORD`
+environment variable is set. If you want to use other key, specify it's location
+in `VOCK_KEY_FILE` variable.
+
 ## Server
 
 [Link to server](https://github.com/indutny/vock-server)

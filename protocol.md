@@ -20,6 +20,7 @@ All frames are JSON packed with [msgpack module](https://github.com/pgriess/node
 Frame types:
 
 * helo
+* wait
 * acpt
 * voic
 * ping

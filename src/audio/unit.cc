@@ -21,6 +21,7 @@ using node::Buffer;
 
 HALUnit::HALUnit(double rate,
                  size_t frame_size,
+                 ssize_t latency,
                  uv_async_t* in_cb,
                  uv_async_t* inready_cb,
                  uv_async_t* outready_cb)
@@ -37,17 +38,22 @@ HALUnit::HALUnit(double rate,
   out_unit_.SetOutputCallback(OutputCallback, this);
 
   int r;
+
+  // One ring for recorded data buffer
   r = PaUtil_InitializeRingBuffer(&cancel_ring_,
                                   2,
                                   sizeof(cancel_ring_buf_) / 2,
                                   cancel_ring_buf_);
   if (r == -1) abort();
+
+  // One ring for data after AEC
   r = PaUtil_InitializeRingBuffer(&in_ring_,
                                   2,
                                   sizeof(in_ring_buf_) / 2,
                                   in_ring_buf_);
   if (r == -1) abort();
 
+  // One ring for data to play
   for (int i = 0; i < kOutRingCount; i++) {
     r = PaUtil_InitializeRingBuffer(&out_rings_[i],
                                     2,
@@ -56,11 +62,24 @@ HALUnit::HALUnit(double rate,
     if (r == -1) abort();
   }
 
+  // And one ring for data that was jus played
   r = PaUtil_InitializeRingBuffer(&used_ring_,
                                   2,
                                   sizeof(used_ring_buf_) / 2,
                                   used_ring_buf_);
   if (r == -1) abort();
+
+  size_t latency_size = latency > 0 ? latency : -latency;
+  int16_t* latency_data = new int16_t[latency_size / 2];
+  memset(latency_data, 0, latency_size);
+  if (latency > 0) {
+    // Add latency to used buffer
+    PaUtil_WriteRingBuffer(&used_ring_, latency_data, latency_size / 2);
+  } else if (latency < 0 ) {
+    // Add latency to cancel buffer
+    PaUtil_WriteRingBuffer(&cancel_ring_, latency_data, latency_size / 2);
+  }
+  delete[] latency_data;
 
   // Init resampler if hardware doesn't support desired sample rate
   if (rate != in_unit_.GetInputSampleRate()) {
@@ -100,6 +119,14 @@ HALUnit::HALUnit(double rate,
     abort();
   }
 
+  // Control AEC from preprocessor
+  if (speex_preprocess_ctl(preprocess_,
+                           SPEEX_PREPROCESS_SET_ECHO_STATE,
+                           canceller_) != 0) {
+    fprintf(stderr, "Failed to attach preprocessor to canceller!\n");
+    abort();
+  }
+
   // Init semaphores
   uv_sem_init(&canceller_sem_, 0);
   pthread_create(&canceller_thread_, NULL, EchoCancelLoop, this);
@@ -135,6 +162,7 @@ void HALUnit::InputCallback(void* arg, size_t bytes) {
   // Get data from microphone
   unit->in_unit_.Render(unit->mic_buff_,
                         MIN(bytes, sizeof(unit->mic_buff_)));
+  if (!unit->outready_) return;
 
   // Put data to the ring
   PaUtil_WriteRingBuffer(&unit->cancel_ring_, unit->mic_buff_, bytes / 2);
@@ -155,6 +183,8 @@ void HALUnit::OutputCallback(void* arg, char* out, size_t size) {
 
   // Zero out buffer
   memset(out, 0, size);
+
+  if (!unit->inready_) return;
 
   char tmp[10 * 1024];
   for (int i = 0; i < kOutRingCount; i++) {

@@ -32,10 +32,11 @@ using v8::ThrowException;
 
 static Persistent<String> ondata_sym;
 
-Audio::Audio(Float64 rate, size_t frame_size) : frame_size_(frame_size),
-                                                input_ready_(false),
-                                                output_ready_(false),
-                                                active_(false) {
+Audio::Audio(Float64 rate, size_t frame_size, ssize_t latency)
+    : frame_size_(frame_size),
+      input_ready_(false),
+      output_ready_(false),
+      active_(false) {
   // Setup async callbacks
   if (uv_async_init(uv_default_loop(), &in_async_, InputAsyncCallback)) {
     abort();
@@ -53,6 +54,7 @@ Audio::Audio(Float64 rate, size_t frame_size) : frame_size_(frame_size),
   // Init Hardware abstraction layer's unit
   unit_ = new HALUnit(rate,
                       frame_size,
+                      latency,
                       &in_async_,
                       &inready_async_,
                       &outready_async_);
@@ -68,13 +70,18 @@ Audio::~Audio() {
 Handle<Value> Audio::New(const Arguments& args) {
   HandleScope scope;
 
-  if (args.Length() < 2 || !args[0]->IsNumber() || !args[1]->IsNumber()) {
+  if (args.Length() < 3 ||
+      !args[0]->IsNumber() ||
+      !args[1]->IsNumber() ||
+      !args[2]->IsNumber()) {
     return scope.Close(ThrowException(String::New(
-        "First two arguments should be numbers")));
+        "First three arguments should be numbers")));
   }
 
   // Second argument is in msec
-  Audio* a = new Audio(args[0]->NumberValue(), args[1]->Int32Value());
+  Audio* a = new Audio(args[0]->NumberValue(),
+                       args[1]->Int32Value(),
+                       args[2]->Int32Value());
   a->Wrap(args.Holder());
 
   return scope.Close(args.This());

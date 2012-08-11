@@ -17,6 +17,7 @@ class HALUnit {
  public:
   HALUnit(double rate,
           size_t frame_size,
+          ssize_t latency,
           uv_async_t* in_cb,
           uv_async_t* inready_cb,
           uv_async_t* outready_cb);
@@ -67,8 +68,8 @@ class HALUnit {
   uv_async_t* in_cb_;
   uv_async_t* inready_cb_;
   uv_async_t* outready_cb_;
-  bool inready_;
-  bool outready_;
+  volatile bool inready_;
+  volatile bool outready_;
 };
 
 } // namespace audio

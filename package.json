@@ -24,7 +24,8 @@
     "growl": "~1.5.1",
     "nat-pmp": "~0.0.1",
     "netroute": "~0.2.1",
-    "nat-upnp": "~0.1.0"
+    "nat-upnp": "~0.1.0",
+    "keypress": "~0.1.0"
   },
   "engine": {
     "node": ">= 0.8.0"

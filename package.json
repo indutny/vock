@@ -14,7 +14,6 @@
   "bin": "bin/vock",
   "main": "lib/vock",
   "dependencies": {
-    "node-gyp": "0.6.x",
     "msgpack-js": "~0.1.1",
     "optimist": "~0.3.4",
     "bindings": "~1.0.0",

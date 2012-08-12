@@ -5,15 +5,20 @@ var vock = require('..'),
     argv = require('optimist')
         .usage('Usage:\n' +
                '   vock create\n' +
-               '   vock connect {id}')
+               '   vock connect {id}\n' +
+               '   vock set name value\n' +
+               '   vock get name')
         .describe('server', 'Server address (host:port)')
         .describe('mute', 'Disable recording')
         .describe('version', 'Show CLI version')
+        .describe('key-file', 'SSH Private key file')
         .boolean('mute')
         .boolean('version')
+        .string('key-file')
         .alias('v', 'version')
         .alias('s', 'server')
         .alias('m', 'mute')
+        .alias('k', 'key-file')
         .argv;
 
 vock.cli.run(argv);

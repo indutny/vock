@@ -20,7 +20,7 @@
     "bindings": "~1.0.0",
     "colors": "~0.6.0-1",
     "pripub": "~0.2.0",
-    "prompt": "~0.2.4",
+    "prompt": "~0.2.6",
     "growl": "~1.5.1",
     "nat-pmp": "~0.0.1",
     "netroute": "~0.2.1",

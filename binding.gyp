@@ -20,7 +20,6 @@
       "sources": [
         "src/opus/binding.cc",
         "src/audio/portaudio/pa_ringbuffer.c",
-        "src/audio/platform/mac.c",
         "src/audio/unit.cc",
         "src/audio/binding.cc",
         "src/vock.cc",
@@ -28,6 +27,7 @@
       "conditions": [
         ["OS=='mac'", {
           "libraries": [ "-framework AudioUnit" ],
+          "sources": [ "src/audio/platform/mac.c" ]
         }]
       ]
     }

@@ -1,6 +1,7 @@
 #ifndef _SRC_AUDIO_PLATFORM_LINUX_
 #define _SRC_AUDIO_PLATFORM_LINUX_
 
+#include "uv.h"
 #include <alsa/asoundlib.h>
 #include <pthread.h>
 
@@ -36,6 +37,9 @@ class PlatformUnit {
   snd_pcm_t* device_;
   snd_pcm_hw_params_t* params_;
   pthread_t loop_;
+
+  volatile bool active_;
+  uv_sem_t sem_;
 
   Kind kind_;
   double rate_;

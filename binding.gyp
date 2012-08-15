@@ -31,6 +31,7 @@
           "defines": [ "__PLATFORM_MAC__" ]
         }],
         ["OS=='linux'", {
+          "libraries": [ "-lasound" ],
           "sources": [ "src/audio/platform/linux.c" ],
           "defines": [ "__PLATFORM_LINUX__" ]
         }]

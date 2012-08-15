@@ -2,6 +2,7 @@
 #define _SRC_AUDIO_PLATFORM_LINUX_
 
 #include <alsa/asoundlib.h>
+#include <pthread.h>
 
 namespace vock {
 namespace audio {
@@ -30,11 +31,16 @@ class PlatformUnit {
   void SetOutputCallback(OutputCallbackFn cb, void* arg);
 
  private:
-  snd_pcm_t* handle_;
-  snd_pcm_hw_params_t* params_;
+  static void* Loop(void* arg);
 
+  snd_pcm_t* device_;
+  snd_pcm_hw_params_t* params_;
+  pthread_t loop_;
+
+  Kind kind_;
   double rate_;
   double input_rate_;
+  unsigned int channels_;
 
   InputCallbackFn input_cb_;
   void* input_arg_;

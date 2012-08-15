@@ -23,7 +23,7 @@
     "growl": "~1.5.1",
     "nat-pmp": "~0.0.1",
     "netroute": "~0.2.1",
-    "nat-upnp": "~0.2.1",
+    "nat-upnp": "~0.2.2",
     "keypress": "~0.1.0",
     "nconf": "~0.6.4"
   },

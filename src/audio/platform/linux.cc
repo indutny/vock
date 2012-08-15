@@ -47,6 +47,9 @@ PlatformUnit::PlatformUnit(Kind kind, double rate) : kind_(kind), rate_(rate) {
         "Failed to apply params")
   snd_pcm_hw_params_free(params_);
 
+  buff_size_ = rate / 100;
+  buff_ = new int16_t[channels_ * buff_size_];
+
   pthread_create(&loop_, NULL, PlatformUnit::Loop, this);
 }
 
@@ -54,10 +57,39 @@ PlatformUnit::PlatformUnit(Kind kind, double rate) : kind_(kind), rate_(rate) {
 PlatformUnit::~PlatformUnit() {
   pthread_cancel(loop_);
   snd_pcm_close(device_);
+  delete[] buff_;
 }
 
 
 void* PlatformUnit::Loop(void* arg) {
+  PlatformUnit* unit = reinterpret_cast<PlatformUnit*>(arg);
+  int err = 0;
+  int16_t* buff;
+
+  if (unit->kind_ == kInputUnit) {
+    while (1) {
+      buff = unit->buff_;
+      err = snd_pcm_readi(unit->device_, buff, unit->buff_size_);
+      if (err == -EPIPE) {
+        CHECK(snd_pcm_prepare(unit->device_), "Prepare failed")
+      } else if (err < 0) {
+        fprintf(stderr, "Failed to read: %d\n", err);
+        abort();
+      }
+    }
+  } else if (unit->kind_ == kOutputUnit) {
+    while (1) {
+      buff = unit->buff_;
+      err = snd_pcm_writei(unit->device_, buff, unit->buff_size_);
+      if (err == -EPIPE) {
+        CHECK(snd_pcm_prepare(unit->device_), "Prepare failed")
+      } else if (err < 0) {
+        fprintf(stderr, "Failed to write: %d\n", err);
+        abort();
+      }
+    }
+  }
+
   return NULL;
 }
 

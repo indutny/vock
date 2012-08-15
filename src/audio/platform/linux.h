@@ -42,6 +42,9 @@ class PlatformUnit {
   double input_rate_;
   unsigned int channels_;
 
+  int16_t* buff_;
+  size_t buff_size_;
+
   InputCallbackFn input_cb_;
   void* input_arg_;
 

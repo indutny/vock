@@ -10,8 +10,6 @@
 #include <pthread.h> // pthread_t
 #include <string.h> // memset
 
-#include "platform/mac.h"
-
 #define MIN(a, b) ((a) > (b) ? (b) : (a))
 
 namespace vock {

@@ -3,7 +3,12 @@
 
 #include "node.h"
 #include "node_buffer.h"
+
+#ifdef __PLATFORM_MAC__
 #include "platform/mac.h"
+#elif __PLATFORM_LINUX__
+#include "platform/linux.h"
+#endif
 #include "portaudio/pa_ringbuffer.h"
 
 #include <speex/speex_resampler.h>

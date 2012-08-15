@@ -119,7 +119,7 @@
         "opus/silk/stereo_decode_pred.c",
         "opus/silk/stereo_encode_pred.c",
         "opus/silk/stereo_find_predictor.c",
-        "opus/silk/stereo_quant_pred",
+        "opus/silk/stereo_quant_pred.c",
       ],
       "conditions": [
         ["opus_build_type=='fixed'", {

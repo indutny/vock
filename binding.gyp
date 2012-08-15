@@ -27,7 +27,12 @@
       "conditions": [
         ["OS=='mac'", {
           "libraries": [ "-framework AudioUnit" ],
-          "sources": [ "src/audio/platform/mac.c" ]
+          "sources": [ "src/audio/platform/mac.c" ],
+          "defines": [ "__PLATFORM_MAC__" ]
+        }],
+        ["OS=='linux'", {
+          "sources": [ "src/audio/platform/linux.c" ],
+          "defines": [ "__PLATFORM_LINUX__" ]
         }]
       ]
     }

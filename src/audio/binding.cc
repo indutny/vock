@@ -32,7 +32,7 @@ using v8::ThrowException;
 
 static Persistent<String> ondata_sym;
 
-Audio::Audio(Float64 rate, size_t frame_size, ssize_t latency)
+Audio::Audio(double rate, size_t frame_size, ssize_t latency)
     : frame_size_(frame_size),
       input_ready_(false),
       output_ready_(false),

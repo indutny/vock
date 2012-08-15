@@ -13,7 +13,7 @@ using namespace node;
 
 class Audio : public ObjectWrap {
  public:
-  Audio(Float64 rate, size_t frame_size, ssize_t latency);
+  Audio(double rate, size_t frame_size, ssize_t latency);
   ~Audio();
 
   static void Init(v8::Handle<v8::Object> target);

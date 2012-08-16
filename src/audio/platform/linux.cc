@@ -8,11 +8,23 @@
 
 #define CHECK(fn, msg)\
 {\
-  int _err = fn;\
-  if (_err < 0) {\
-    fprintf(stderr, "%s (%d)\n", msg, _err);\
+  int _err_c = fn;\
+  if (_err_c < 0) {\
+    fprintf(stderr, "%s (%d)\n", msg, _err_c);\
     abort();\
   }\
+}
+
+#define RECOVER(device, fn, res)\
+{\
+  int _err_r;\
+  do {\
+    _err_r = fn;\
+    if (_err_r < 0) {\
+      CHECK(snd_pcm_recover(device, _err_r, 1), "Recover failed")\
+    }\
+  } while (_err_r < 0);\
+  res = _err_r;\
 }
 
 namespace vock {
@@ -53,7 +65,7 @@ PlatformUnit::PlatformUnit(Kind kind, double rate) : kind_(kind), rate_(rate) {
   buff_ = new int16_t[channels_ * buff_size_];
 
   // Apply other params
-  CHECK(snd_pcm_hw_params_set_buffer_size(device_, params_, buff_size_ * 10),
+  CHECK(snd_pcm_hw_params_set_buffer_size(device_, params_, buff_size_ * 4),
         "Failed to set buffer size")
   CHECK(snd_pcm_hw_params_set_period_size(device_, params_, buff_size_, 0),
         "Failed to set period size")
@@ -75,6 +87,7 @@ PlatformUnit::~PlatformUnit() {
 
 void* PlatformUnit::Loop(void* arg) {
   PlatformUnit* unit = reinterpret_cast<PlatformUnit*>(arg);
+  int avail;
 
   while (1) {
     // Wait for start
@@ -84,16 +97,20 @@ void* PlatformUnit::Loop(void* arg) {
       while (1) {
         // Break on stop
         if (!unit->active_) break;
+        RECOVER(unit->device_, snd_pcm_avail_update(unit->device_), avail)
+        if (avail == 0) snd_pcm_wait(unit->device_, 2);
 
         unit->input_cb_(unit->input_arg_, unit->buff_size_ * 2);
       }
     } else if (unit->kind_ == kOutputUnit) {
-      int err = 0;
+      int written;
       int16_t* buff;
 
       while (1) {
         // Break on stop
         if (!unit->active_) break;
+        RECOVER(unit->device_, snd_pcm_avail_update(unit->device_), avail)
+        if (avail == 0) snd_pcm_wait(unit->device_, 2);
 
         buff = unit->buff_;
         unit->output_cb_(unit->output_arg_,
@@ -108,12 +125,10 @@ void* PlatformUnit::Loop(void* arg) {
           }
         }
 
-        do {
-          err = snd_pcm_writei(unit->device_, buff, unit->buff_size_);
-          if (err < 0) {
-            CHECK(snd_pcm_recover(unit->device_, err, 1), "Recover failed")
-          }
-        } while (err < 0);
+        RECOVER(unit->device_,
+                snd_pcm_writei(unit->device_, buff, unit->buff_size_),
+                written);
+        assert(written == unit->buff_size_);
       }
     }
   }
@@ -124,6 +139,7 @@ void* PlatformUnit::Loop(void* arg) {
 
 void PlatformUnit::Start() {
   if (active_) return;
+  snd_pcm_pause(device_, 0);
   active_ = true;
   uv_sem_post(&sem_);
 }
@@ -132,22 +148,19 @@ void PlatformUnit::Start() {
 void PlatformUnit::Stop() {
   if (!active_) return;
   active_ = false;
+  snd_pcm_pause(device_, 1);
 }
 
 
 void PlatformUnit::Render(char* out, size_t size) {
-  int err;
+  size_t read;
   size_t i, j;
   int16_t* buff = buff_;
   int16_t* iout = reinterpret_cast<int16_t*>(out);
 
   // Read to internal buffer first
-  do {
-    err = snd_pcm_readi(device_, buff, size / 2);
-    if (err < 0) {
-      CHECK(snd_pcm_recover(device_, err, 1), "Recover failed")
-    }
-  } while (err < 0);
+  RECOVER(device_, snd_pcm_readi(device_, buff, size / 2), read);
+  assert(read == size / 2);
 
   // Get channel from interleaved stream
   for (i = 0, j = 0; i < size * channels_ / 2; i += channels_, j++) {

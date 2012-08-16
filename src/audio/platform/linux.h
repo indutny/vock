@@ -3,6 +3,7 @@
 
 #include "uv.h"
 #include <alsa/asoundlib.h>
+#include <pthread.h>
 
 namespace vock {
 namespace audio {
@@ -31,14 +32,14 @@ class PlatformUnit {
   void SetOutputCallback(OutputCallbackFn cb, void* arg);
 
  private:
-  static void InputCallback(snd_async_handler_t* handler);
-  static void OutputCallback(snd_async_handler_t* handler);
-
-  void RenderOutput(snd_pcm_sframes_t frames);
+  static void* Loop(void* arg);
 
   snd_pcm_t* device_;
   snd_pcm_hw_params_t* params_;
-  snd_async_handler_t* handler_;
+  pthread_t loop_;
+
+  volatile bool active_;
+  uv_sem_t sem_;
 
   Kind kind_;
   double rate_;
@@ -46,7 +47,7 @@ class PlatformUnit {
   unsigned int channels_;
 
   int16_t* buff_;
-  ssize_t buff_size_;
+  size_t buff_size_;
 
   InputCallbackFn input_cb_;
   void* input_arg_;

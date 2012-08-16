@@ -8,21 +8,29 @@
 
 #define CHECK(fn, msg)\
 {\
-  int _err = fn;\
-  if (_err < 0) {\
-    fprintf(stderr, "%s (%d)\n", msg, _err);\
+  int _err_c = fn;\
+  if (_err_c < 0) {\
+    fprintf(stderr, "%s (%d)\n", msg, _err_c);\
     abort();\
   }\
+}
+
+#define RECOVER(device, fn, res)\
+{\
+  int _err_r;\
+  do {\
+    _err_r = fn;\
+    if (_err_r < 0) {\
+      CHECK(snd_pcm_recover(device, _err_r, 1), "Recover failed")\
+    }\
+  } while (_err_r < 0);\
+  res = _err_r;\
 }
 
 namespace vock {
 namespace audio {
 
 PlatformUnit::PlatformUnit(Kind kind, double rate) : kind_(kind), rate_(rate) {
-  // Init thread
-  uv_sem_init(&sem_, 0);
-  pthread_create(&loop_, NULL, PlatformUnit::Loop, this);
-
   // Init device
   snd_pcm_stream_t dir;
 
@@ -34,7 +42,7 @@ PlatformUnit::PlatformUnit(Kind kind, double rate) : kind_(kind), rate_(rate) {
 
   CHECK(snd_pcm_open(&device_, "hw:0,0", dir, 0), "Failed to open device")
   CHECK(snd_pcm_hw_params_malloc(&params_), "Failed to allocate parameters")
-  CHECK(snd_pcm_hw_params_any(device_, params_), "Failed to bind parameters")
+  CHECK(snd_pcm_hw_params_any(device_, params_), "Failed to get parameters")
   CHECK(snd_pcm_hw_params_set_access(device_,
                                      params_,
                                      SND_PCM_ACCESS_RW_INTERLEAVED),
@@ -53,7 +61,7 @@ PlatformUnit::PlatformUnit(Kind kind, double rate) : kind_(kind), rate_(rate) {
   buff_ = new int16_t[channels_ * buff_size_];
 
   // Apply other params
-  CHECK(snd_pcm_hw_params_set_buffer_size(device_, params_, buff_size_ * 10),
+  CHECK(snd_pcm_hw_params_set_buffer_size(device_, params_, buff_size_ * 3),
         "Failed to set buffer size")
   CHECK(snd_pcm_hw_params_set_period_size(device_, params_, buff_size_, 0),
         "Failed to set period size")
@@ -61,83 +69,63 @@ PlatformUnit::PlatformUnit(Kind kind, double rate) : kind_(kind), rate_(rate) {
         "Failed to apply params")
   snd_pcm_hw_params_free(params_);
   CHECK(snd_pcm_prepare(device_), "Failed to prepare device");
+
+  // Add async handler
+  if (kind_ == kInputUnit) {
+    CHECK(snd_async_add_pcm_handler(&handler_, device_, InputCallback, this),
+          "Failed to add async handler for input")
+  } else {
+    CHECK(snd_async_add_pcm_handler(&handler_, device_, OutputCallback, this),
+          "Failed to add async handler for output")
+  }
 }
 
 
 PlatformUnit::~PlatformUnit() {
-  pthread_cancel(loop_);
-  uv_sem_destroy(&sem_);
   snd_pcm_drain(device_);
   snd_pcm_close(device_);
   delete[] buff_;
 }
 
 
-void* PlatformUnit::Loop(void* arg) {
-  PlatformUnit* unit = reinterpret_cast<PlatformUnit*>(arg);
+void PlatformUnit::InputCallback(snd_async_handler_t* handler) {
+  PlatformUnit* unit = reinterpret_cast<PlatformUnit*>(
+      snd_async_handler_get_callback_private(handler));
+  snd_pcm_sframes_t avail;
 
-  while (1) {
-    // Wait for start
-    uv_sem_wait(&unit->sem_);
+  RECOVER(unit->device_, snd_pcm_avail_update(unit->device_), avail)
+  while (avail >= unit->buff_size_) {
+    unit->input_cb_(unit->input_arg_, unit->buff_size_ * 2);
 
-    if (unit->kind_ == kInputUnit) {
-      while (1) {
-        // Break on stop
-        if (!unit->active_) break;
-
-        unit->input_cb_(unit->input_arg_, unit->buff_size_ * 2);
-      }
-    } else if (unit->kind_ == kOutputUnit) {
-      int err = 0;
-      int16_t* buff;
-
-      while (1) {
-        // Break on stop
-        if (!unit->active_) break;
-
-        buff = unit->buff_;
-        unit->output_cb_(unit->output_arg_,
-                         reinterpret_cast<char*>(buff),
-                         unit->buff_size_ * 2);
-
-        // Non-interleaved mono -> Interleaved multi-channel
-        int i = unit->buff_size_ - 1;
-        for (; i >= 0; i--) {
-          for (size_t j = 0; j < unit->channels_; j++) {
-            buff[i * unit->channels_ + j] = buff[i];
-          }
-        }
-
-        do {
-          err = snd_pcm_writei(unit->device_, buff, unit->buff_size_);
-          if (err < 0) {
-            CHECK(snd_pcm_recover(unit->device_, err, 1), "Recover failed")
-          }
-        } while (err < 0);
-      }
-    }
+    // Update available bytes count
+    RECOVER(unit->device_, snd_pcm_avail_update(unit->device_), avail)
   }
+}
 
-  return NULL;
+
+void PlatformUnit::OutputCallback(snd_async_handler_t* handler) {
+  PlatformUnit* unit = reinterpret_cast<PlatformUnit*>(
+      snd_async_handler_get_callback_private(handler));
+  snd_pcm_sframes_t avail;
+
+  RECOVER(unit->device_, snd_pcm_avail_update(unit->device_), avail)
+  unit->RenderOutput(avail);
+  RECOVER(unit->device_, snd_pcm_avail_update(unit->device_), avail)
 }
 
 
 void PlatformUnit::Start() {
-  if (active_) return;
-  active_ = true;
-  uv_sem_post(&sem_);
+  snd_pcm_start(device_);
 }
 
 
 void PlatformUnit::Stop() {
-  if (!active_) return;
-  active_ = false;
+  snd_pcm_drop(device_);
 }
 
 
 void PlatformUnit::Render(char* out, size_t size) {
   int err;
-  size_t i, j;
   int16_t* buff = buff_;
   int16_t* iout = reinterpret_cast<int16_t*>(out);
 
@@ -149,10 +137,46 @@ void PlatformUnit::Render(char* out, size_t size) {
     }
   } while (err < 0);
 
-  // Get channel from interleaved stream
-  for (i = 0, j = 0; i < size * channels_ / 2; i += channels_, j++) {
-    iout[j] = buff[i];
+  // Set left bytes to zero
+  if (err < static_cast<ssize_t>(size / 2)) {
+    memset(iout + err, 0, size - 2 * err);
   }
+
+  // Get channel from interleaved stream
+  // (By mixing two)
+  for (size_t i = 0; i < size / 2; i++) {
+    iout[i] = 0;
+    for (size_t j = 0; j < channels_; j++) {
+      iout[i] += buff[i * channels_ + j] / channels_;
+    }
+  }
+}
+
+
+void PlatformUnit::RenderOutput(snd_pcm_sframes_t frames) {
+  int err;
+  int16_t* buff = buff_;
+
+  // Render buff_size maximum
+  if (buff_size_ < frames) {
+    frames = buff_size_;
+  }
+  output_cb_(output_arg_, reinterpret_cast<char*>(buff), frames * 2);
+
+  // Non-interleaved mono -> Interleaved multi-channel
+  ssize_t i = frames - 1;
+  for (; i >= 0; i--) {
+    for (size_t j = 0; j < channels_; j++) {
+      buff[i * channels_ + j] = buff[i];
+    }
+  }
+
+  do {
+    err = snd_pcm_writei(device_, buff, frames);
+    if (err < 0) {
+      CHECK(snd_pcm_recover(device_, err, 1), "Recover failed")
+    }
+  } while (err < 0);
 }
 
 

@@ -8,7 +8,8 @@
     "url": "http://github.com/indutny/vock.git"
   },
   "os": [
-    "darwin"
+    "darwin",
+    "linux"
   ],
   "preferGlobal": true,
   "bin": "bin/vock",

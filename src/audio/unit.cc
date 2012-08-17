@@ -11,6 +11,10 @@
 #include <string.h> // memset
 #include <stdlib.h> // abort
 
+#ifndef MIN
+# define MIN(a, b) ((a) > (b) ? (b) : (a))
+#endif
+
 namespace vock {
 namespace audio {
 

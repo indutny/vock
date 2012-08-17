@@ -1,0 +1,8 @@
+/build
+node_modules/
+npm-debug.log
+/deps/opus/opus/doc/
+/deps/opus/opus/tests/
+/deps/speex/speex/doc/
+/deps/speex/speex/symbian/
+/deps/speex/speex/ti/

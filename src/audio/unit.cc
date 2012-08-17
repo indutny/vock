@@ -7,7 +7,6 @@
 #include <speex/speex_echo.h>
 #include <speex/speex_preprocess.h>
 
-#include <pthread.h> // pthread_t
 #include <string.h> // memset
 #include <stdlib.h> // abort
 
@@ -130,7 +129,8 @@ HALUnit::HALUnit(double rate,
 
   // Init semaphores
   uv_sem_init(&canceller_sem_, 0);
-  pthread_create(&canceller_thread_, NULL, EchoCancelLoop, this);
+  uv_sem_init(&canceller_terminate_, 0);
+  uv_thread_create(&canceller_thread_, EchoCancelLoop, this);
 }
 
 
@@ -146,8 +146,11 @@ HALUnit::~HALUnit() {
   }
   PaUtil_FlushRingBuffer(&used_ring_);
 
-  pthread_cancel(canceller_thread_);
+  uv_sem_post(&canceller_terminate_);
+  uv_sem_post(&canceller_sem_);
+  uv_thread_join(&canceller_thread_);
   uv_sem_destroy(&canceller_sem_);
+  uv_sem_destroy(&canceller_terminate_);
 }
 
 
@@ -220,92 +223,99 @@ void HALUnit::OutputCallback(void* arg, char* out, size_t size) {
 }
 
 
-void* HALUnit::EchoCancelLoop(void* arg) {
+void HALUnit::EchoCancelLoop(void* arg) {
   HALUnit* u = reinterpret_cast<HALUnit*>(arg);
+
+  for (;;) {
+    if (!u->EchoCancelLoop()) break;
+  }
+}
+
+
+bool HALUnit::EchoCancelLoop() {
   char tmp[100 * 1024];
   char rec[100 * 1024];
   char used[100 * 1024];
 
+  uv_sem_wait(&canceller_sem_);
+  if (uv_sem_trywait(&canceller_terminate_) == 0) return false;
+
+  // Read as much frames as possible from input
   for (;;) {
-    uv_sem_wait(&u->canceller_sem_);
+    size_t in_avail = PaUtil_GetRingBufferReadAvailable(&cancel_ring_);
+    size_t out_avail = PaUtil_GetRingBufferReadAvailable(&used_ring_);
 
-    // Read as much frames as possible from input
-    for (;;) {
-      size_t in_avail = PaUtil_GetRingBufferReadAvailable(&u->cancel_ring_);
-      size_t out_avail = PaUtil_GetRingBufferReadAvailable(&u->used_ring_);
+    size_t in_needed = frame_size_ / 2;
+    size_t out_needed = MIN(out_avail, frame_size_ / 2);
 
-      size_t in_needed = u->frame_size_ / 2;
-      size_t out_needed = MIN(out_avail, u->frame_size_ / 2);
+    // buffer will change size after resampling,
+    // take this into account
+    if (resampler_ != NULL) {
+      uint32_t num, denum;
 
-      // buffer will change size after resampling,
-      // take this into account
-      if (u->resampler_ != NULL) {
-        uint32_t num, denum;
-
-        speex_resampler_get_ratio(u->resampler_, &num, &denum);
-        in_needed = (in_needed * num) / denum;
-      }
-
-      // Skip if we don't have enough data yet
-      if (in_needed > in_avail) break;
-
-      // Read mic buffer
-      size_t read;
-      if (u->resampler_ == NULL) {
-        read = PaUtil_ReadRingBuffer(&u->cancel_ring_, rec, in_needed);
-      } else {
-        read = PaUtil_ReadRingBuffer(&u->cancel_ring_, tmp, in_needed);
-      }
-      if (read != in_needed) abort();
-
-      // Read used buffer
-      read = PaUtil_ReadRingBuffer(&u->used_ring_, used, out_needed);
-      if (read != out_needed) abort();
-
-      // Fill rest with zeroes
-      if (read < u->frame_size_ / 2) {
-        memset(used + read * 2, 0, u->frame_size_ - 2 * read);
-      }
-
-      // Resample input
-      if (u->resampler_ != NULL) {
-        spx_uint32_t tmp_samples;
-        spx_uint32_t out_samples;
-        int r;
-
-        // Get size in samples
-        tmp_samples = in_needed;
-        out_samples = u->frame_size_ / 2;
-
-        // Resample!
-        r = speex_resampler_process_int(
-            u->resampler_,
-            0,
-            reinterpret_cast<spx_int16_t*>(tmp),
-            &tmp_samples,
-            reinterpret_cast<spx_int16_t*>(rec),
-            &out_samples);
-        if (r) abort();
-      }
-
-      // Cancel echo
-      speex_echo_cancellation(u->canceller_,
-                              reinterpret_cast<spx_int16_t*>(rec),
-                              reinterpret_cast<spx_int16_t*>(used),
-                              reinterpret_cast<spx_int16_t*>(tmp));
-
-      // Apply preprocessor
-      speex_preprocess_run(u->preprocess_, reinterpret_cast<spx_int16_t*>(tmp));
-
-      // Put resampled and cancelled frame into in_ring
-      PaUtil_WriteRingBuffer(&u->in_ring_, tmp, u->frame_size_ / 2);
-
-      // Send message to event-loop's thread
-      uv_async_send(u->in_cb_);
+      speex_resampler_get_ratio(resampler_, &num, &denum);
+      in_needed = (in_needed * num) / denum;
     }
+
+    // Skip if we don't have enough data yet
+    if (in_needed > in_avail) break;
+
+    // Read mic buffer
+    size_t read;
+    if (resampler_ == NULL) {
+      read = PaUtil_ReadRingBuffer(&cancel_ring_, rec, in_needed);
+    } else {
+      read = PaUtil_ReadRingBuffer(&cancel_ring_, tmp, in_needed);
+    }
+    if (read != in_needed) abort();
+
+    // Read used buffer
+    read = PaUtil_ReadRingBuffer(&used_ring_, used, out_needed);
+    if (read != out_needed) abort();
+
+    // Fill rest with zeroes
+    if (read < frame_size_ / 2) {
+      memset(used + read * 2, 0, frame_size_ - 2 * read);
+    }
+
+    // Resample input
+    if (resampler_ != NULL) {
+      spx_uint32_t tmp_samples;
+      spx_uint32_t out_samples;
+      int r;
+
+      // Get size in samples
+      tmp_samples = in_needed;
+      out_samples = frame_size_ / 2;
+
+      // Resample!
+      r = speex_resampler_process_int(
+          resampler_,
+          0,
+          reinterpret_cast<spx_int16_t*>(tmp),
+          &tmp_samples,
+          reinterpret_cast<spx_int16_t*>(rec),
+          &out_samples);
+      if (r) abort();
+    }
+
+    // Cancel echo
+    speex_echo_cancellation(canceller_,
+                            reinterpret_cast<spx_int16_t*>(rec),
+                            reinterpret_cast<spx_int16_t*>(used),
+                            reinterpret_cast<spx_int16_t*>(tmp));
+
+    // Apply preprocessor
+    speex_preprocess_run(preprocess_, reinterpret_cast<spx_int16_t*>(tmp));
+
+    // Put resampled and cancelled frame into in_ring
+    PaUtil_WriteRingBuffer(&in_ring_, tmp, frame_size_ / 2);
+
+    // Send message to event-loop's thread
+    uv_async_send(in_cb_);
   }
 
-  return NULL;
+  return true;
 }
 
 

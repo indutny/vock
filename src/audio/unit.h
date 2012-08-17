@@ -41,13 +41,15 @@ class HALUnit {
 
   static void InputCallback(void* arg, size_t bytes);
   static void OutputCallback(void* arg, char* out, size_t bytes);
-  static void* EchoCancelLoop(void* arg);
+  static void EchoCancelLoop(void* arg);
+  bool EchoCancelLoop();
 
   size_t frame_size_;
 
   // Echo canceller thread
-  pthread_t canceller_thread_;
+  uv_thread_t canceller_thread_;
   uv_sem_t canceller_sem_;
+  uv_sem_t canceller_terminate_;
 
   PlatformUnit in_unit_;
   PlatformUnit out_unit_;

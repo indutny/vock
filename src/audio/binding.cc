@@ -8,6 +8,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <math.h> // sqrt
+#include <stdlib.h> // abort
 
 namespace vock {
 namespace audio {

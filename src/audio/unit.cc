@@ -9,8 +9,7 @@
 
 #include <pthread.h> // pthread_t
 #include <string.h> // memset
-
-#define MIN(a, b) ((a) > (b) ? (b) : (a))
+#include <stdlib.h> // abort
 
 namespace vock {
 namespace audio {

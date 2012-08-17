@@ -1,171 +1,214 @@
 #include "linux.h"
 #include "uv.h"
 
+#include <assert.h>
 #include <stdint.h>
-#include <string.h> // memmove
-#include <alsa/asoundlib.h>
-#include <pthread.h>
-
-#define CHECK(fn, msg)\
-{\
-  int _err_c = fn;\
-  if (_err_c < 0) {\
-    fprintf(stderr, "%s (%d)\n", msg, _err_c);\
-    abort();\
-  }\
-}
-
-#define RECOVER(device, fn, res)\
-{\
-  int _err_r;\
-  do {\
-    _err_r = fn;\
-    if (_err_r < 0) {\
-      CHECK(snd_pcm_recover(device, _err_r, 1), "Recover failed")\
-    }\
-  } while (_err_r < 0);\
-  res = _err_r;\
-}
+#include <stdio.h> // fprintf
+#include <string.h> // memcpy, memset
+#include <stdlib.h> // abort
+#include <pulse/pulseaudio.h>
 
 namespace vock {
 namespace audio {
 
-PlatformUnit::PlatformUnit(Kind kind, double rate) : kind_(kind), rate_(rate) {
-  // Init thread
-  uv_sem_init(&sem_, 0);
-  pthread_create(&loop_, NULL, PlatformUnit::Loop, this);
-
-  // Init device
-  snd_pcm_stream_t dir;
-
-  if (kind == kInputUnit) {
-    dir = SND_PCM_STREAM_CAPTURE;
-  } else {
-    dir = SND_PCM_STREAM_PLAYBACK;
-  }
-
-  CHECK(snd_pcm_open(&device_, "hw:0,0", dir, 0), "Failed to open device")
-  CHECK(snd_pcm_hw_params_malloc(&params_), "Failed to allocate parameters")
-  CHECK(snd_pcm_hw_params_any(device_, params_), "Failed to bind parameters")
-  CHECK(snd_pcm_hw_params_set_access(device_,
-                                     params_,
-                                     SND_PCM_ACCESS_RW_INTERLEAVED),
-        "Failed to set access")
-  CHECK(snd_pcm_hw_params_set_format(device_, params_, SND_PCM_FORMAT_S16_LE),
-        "Failed to set format")
-  CHECK(snd_pcm_hw_params_set_rate(device_, params_, rate, 0),
-        "Failed to set rate")
-  CHECK(snd_pcm_hw_params_get_channels(params_, &channels_),
-        "Set channels failed")
-
+PlatformUnit::PlatformUnit(Kind kind, double rate) : pa_ml_(NULL),
+                                                     pa_mlapi_(NULL),
+                                                     pa_ctx_(NULL),
+                                                     pa_stream_(NULL),
+                                                     active_(false),
+                                                     kind_(kind),
+                                                     rate_(rate) {
+  pa_ss_.format = PA_SAMPLE_S16LE;
+  pa_ss_.channels = 1;
+  pa_ss_.rate = rate;
   input_rate_ = rate;
 
-  // Init buffer
-  buff_size_ = rate / 100;
-  buff_ = new int16_t[channels_ * buff_size_];
+  buff_size_ = 2 * rate / 100;
 
-  // Apply other params
-  CHECK(snd_pcm_hw_params_set_buffer_size(device_, params_, buff_size_ * 4),
-        "Failed to set buffer size")
-  CHECK(snd_pcm_hw_params_set_period_size(device_, params_, buff_size_, 0),
-        "Failed to set period size")
-  CHECK(snd_pcm_hw_params(device_, params_),
-        "Failed to apply params")
-  snd_pcm_hw_params_free(params_);
-  CHECK(snd_pcm_prepare(device_), "Failed to prepare device");
+  uv_sem_init(&loop_terminate_, 0);
+  uv_mutex_init(&stream_mutex_);
+  uv_thread_create(&loop_, Loop, this);
 }
 
 
 PlatformUnit::~PlatformUnit() {
-  pthread_cancel(loop_);
-  uv_sem_destroy(&sem_);
-  snd_pcm_drain(device_);
-  snd_pcm_close(device_);
-  delete[] buff_;
+  Stop();
+  uv_sem_post(&loop_terminate_);
+  uv_thread_join(&loop_);
+  uv_mutex_destroy(&stream_mutex_);
+  uv_sem_destroy(&loop_terminate_);
 }
 
 
-void* PlatformUnit::Loop(void* arg) {
+void PlatformUnit::Loop(void* arg) {
   PlatformUnit* unit = reinterpret_cast<PlatformUnit*>(arg);
-  int avail;
 
-  while (1) {
-    // Wait for start
-    uv_sem_wait(&unit->sem_);
+  unit->StartLoop();
 
-    if (unit->kind_ == kInputUnit) {
-      while (1) {
-        // Break on stop
-        if (!unit->active_) break;
-        RECOVER(unit->device_, snd_pcm_avail_update(unit->device_), avail)
-        if (avail == 0) snd_pcm_wait(unit->device_, 2);
-
-        unit->input_cb_(unit->input_arg_, unit->buff_size_ * 2);
-      }
-    } else if (unit->kind_ == kOutputUnit) {
-      int written;
-      int16_t* buff;
-
-      while (1) {
-        // Break on stop
-        if (!unit->active_) break;
-        RECOVER(unit->device_, snd_pcm_avail_update(unit->device_), avail)
-        if (avail == 0) snd_pcm_wait(unit->device_, 2);
-
-        buff = unit->buff_;
-        unit->output_cb_(unit->output_arg_,
-                         reinterpret_cast<char*>(buff),
-                         unit->buff_size_ * 2);
-
-        // Non-interleaved mono -> Interleaved multi-channel
-        int i = unit->buff_size_ - 1;
-        for (; i >= 0; i--) {
-          for (size_t j = 0; j < unit->channels_; j++) {
-            buff[i * unit->channels_ + j] = buff[i];
-          }
-        }
-
-        RECOVER(unit->device_,
-                snd_pcm_writei(unit->device_, buff, unit->buff_size_),
-                written);
-        assert(written == unit->buff_size_);
-      }
-    }
+  while(1) {
+    if (!unit->RunLoop()) break;
+    if (uv_sem_trywait(&unit->loop_terminate_) == 0) break;
   }
 
-  return NULL;
+  unit->EndLoop();
+}
+
+
+void PlatformUnit::StateCallback(pa_context* ctx, void* arg) {
+  PlatformUnit* unit = reinterpret_cast<PlatformUnit*>(arg);
+
+  switch (pa_context_get_state(ctx)) {
+   case PA_CONTEXT_UNCONNECTED:
+   case PA_CONTEXT_CONNECTING:
+   case PA_CONTEXT_AUTHORIZING:
+   case PA_CONTEXT_SETTING_NAME:
+   default:
+    break;
+   case PA_CONTEXT_FAILED:
+   case PA_CONTEXT_TERMINATED:
+    unit->pa_state_ = 2;
+    break;
+   case PA_CONTEXT_READY:
+    unit->pa_state_ = 1;
+   break;
+  }
+}
+
+
+void PlatformUnit::StartLoop() {
+  pa_buffer_attr attr;
+  pa_stream_flags_t flags;
+  pa_stream* stream;
+
+  // Initialize loop, API and context
+  pa_ml_ = pa_mainloop_new();
+  assert(pa_ml_ != NULL);
+  pa_mlapi_ = pa_mainloop_get_api(pa_ml_);
+  pa_ctx_ = pa_context_new(pa_mlapi_, "Vock");
+  assert(pa_ctx_ != NULL);
+
+  // Connect to server
+  pa_state_ = 0;
+  pa_context_set_state_callback(pa_ctx_, StateCallback, this);
+  pa_context_connect(pa_ctx_, NULL, PA_CONTEXT_NOFLAGS, NULL);
+
+  // Wait for connection establishment
+  while (pa_state_ == 0) {
+    pa_mainloop_iterate(pa_ml_, 1, NULL);
+  }
+  assert(pa_state_ == 1);
+
+  // Create stream
+  attr.maxlength = buff_size_ * 2;
+  attr.tlength = buff_size_;
+  attr.prebuf = 0xffffffff;
+  attr.minreq = 0xffffffff;
+  attr.fragsize = buff_size_;
+
+  stream = pa_stream_new(pa_ctx_, "Vock.Stream", &pa_ss_, NULL);
+  assert(stream != NULL);
+
+  uv_mutex_lock(&stream_mutex_);
+  flags = static_cast<pa_stream_flags_t>(PA_STREAM_ADJUST_LATENCY |
+                                         PA_STREAM_INTERPOLATE_TIMING |
+                                         PA_STREAM_AUTO_TIMING_UPDATE |
+                                         (active_ ?
+                                            0 : PA_STREAM_START_CORKED));
+
+  // Connect it to playback/record
+  if (kind_ == kInputUnit) {
+    pa_stream_set_read_callback(stream, RequestCallback, this);
+    pa_stream_connect_record(stream, NULL, &attr, flags);
+  } else {
+    pa_stream_set_write_callback(stream, RequestCallback, this);
+    pa_stream_connect_playback(stream, NULL, &attr, flags, NULL, NULL);
+  }
+
+  pa_stream_ = stream;
+  uv_mutex_unlock(&stream_mutex_);
+}
+
+
+void PlatformUnit::EndLoop() {
+  pa_context_disconnect(pa_ctx_);
+  pa_context_unref(pa_ctx_);
+  pa_mainloop_free(pa_ml_);
+}
+
+
+bool PlatformUnit::RunLoop() {
+  pa_mainloop_iterate(pa_ml_, 1, NULL);
+
+  // Continue polling
+  return true;
+}
+
+
+void PlatformUnit::RequestCallback(pa_stream* p, size_t bytes, void* arg) {
+  reinterpret_cast<PlatformUnit*>(arg)->RequestCallback(bytes);
+}
+
+
+void PlatformUnit::RequestCallback(size_t bytes) {
+  if (kind_ == kInputUnit) {
+    input_cb_(input_arg_, bytes);
+  } else {
+    int r;
+    char* buff;
+
+    uv_mutex_lock(&stream_mutex_);
+    assert(pa_stream_begin_write(pa_stream_,
+                                 reinterpret_cast<void**>(&buff),
+                                 &bytes) == 0);
+    output_cb_(output_arg_, buff, bytes);
+    r = pa_stream_write(pa_stream_, buff, bytes, NULL, 0, PA_SEEK_RELATIVE);
+    assert(r >= 0);
+    uv_mutex_unlock(&stream_mutex_);
+  }
 }
 
 
 void PlatformUnit::Start() {
-  if (active_) return;
-  snd_pcm_pause(device_, 0);
-  active_ = true;
-  uv_sem_post(&sem_);
+  uv_mutex_lock(&stream_mutex_);
+  if (!active_) {
+    active_ = true;
+
+    if (pa_stream_ != NULL) {
+      pa_stream_cork(pa_stream_, 0, NULL, NULL);
+    }
+  }
+  uv_mutex_unlock(&stream_mutex_);
 }
 
 
 void PlatformUnit::Stop() {
-  if (!active_) return;
-  active_ = false;
-  snd_pcm_pause(device_, 1);
+  uv_mutex_lock(&stream_mutex_);
+  if (active_) {
+    active_ = false;
+
+    if (pa_stream_ != NULL) {
+      pa_stream_cork(pa_stream_, 1, NULL, NULL);
+    }
+  }
+  uv_mutex_unlock(&stream_mutex_);
 }
 
 
 void PlatformUnit::Render(char* out, size_t size) {
-  size_t read;
-  size_t i, j;
-  int16_t* buff = buff_;
-  int16_t* iout = reinterpret_cast<int16_t*>(out);
+  int r;
+  const void* data;
+  size_t bytes = size;
 
-  // Read to internal buffer first
-  RECOVER(device_, snd_pcm_readi(device_, buff, size / 2), read);
-  assert(read == size / 2);
+  uv_mutex_lock(&stream_mutex_);
+  r = pa_stream_peek(pa_stream_, &data, &bytes);
+  assert(r >= 0);
+  assert(bytes <= size);
 
-  // Get channel from interleaved stream
-  for (i = 0, j = 0; i < size * channels_ / 2; i += channels_, j++) {
-    iout[j] = buff[i];
-  }
+  memcpy(out, data, bytes);
+  memset(out + bytes, 0, size - bytes);
+
+  pa_stream_drop(pa_stream_);
+  uv_mutex_unlock(&stream_mutex_);
 }
 
 

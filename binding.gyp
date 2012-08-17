@@ -31,7 +31,7 @@
           "defines": [ "__PLATFORM_MAC__" ]
         }],
         ["OS=='linux'", {
-          "libraries": [ "-lasound" ],
+          "libraries": [ "-lpulse" ],
           "sources": [ "src/audio/platform/linux.c" ],
           "defines": [ "__PLATFORM_LINUX__" ]
         }]

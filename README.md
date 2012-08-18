@@ -1,13 +1,24 @@
 # Vock
 
-VoIP on node.js 0.8.x **(OSX ONLY FOR NOW)**
+VoIP on node.js 0.8.x
 
 Join #vock on irc.freenode.net if you have any questions!
 
 ## Installing
 
 ```bash
+# OSX
+
 npm install -g vock
+
+# Ubuntu
+
+sudo apt-get install pulseaudio libpulse-dev
+npm install -g vock
+
+# Others
+
+?!?!!?!?!
 ```
 
 ## Usage

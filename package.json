@@ -22,7 +22,7 @@
     "pripub": "~0.2.0",
     "prompt": "~0.2.6",
     "growl": "~1.5.1",
-    "nat-pmp": "~0.0.1",
+    "nat-pmp": "~0.0.2",
     "netroute": "~0.2.1",
     "nat-upnp": "~0.2.4",
     "keypress": "~0.1.0",

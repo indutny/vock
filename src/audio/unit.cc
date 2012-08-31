@@ -127,6 +127,16 @@ HALUnit::HALUnit(double rate,
     abort();
   }
 
+  // AGC
+  int32_t enable = 1;
+  if (speex_preprocess_ctl(preprocess_,
+                           SPEEX_PREPROCESS_SET_AGC,
+                           &enable) != 0) {
+    fprintf(stderr, "Failed to enable AGC on preprocessor!\n");
+    abort();
+  }
+
+
   // Init semaphores
   uv_sem_init(&canceller_sem_, 0);
   uv_sem_init(&canceller_terminate_, 0);

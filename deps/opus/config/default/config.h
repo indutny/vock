@@ -11,8 +11,6 @@
 
 #define OPUS_BUILD            1
 
-#ifndef FIXED_POINT
-#define FIXED_POINT           1
-#endif // FIXED_POINT
+#define FLOATING_POINT        1
 
 #endif // CONFIG_H

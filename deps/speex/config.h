@@ -1,8 +1,5 @@
-/* Disable all parts of the API that are using floats */
-#define DISABLE_FLOAT_API 1
-
 /* Compile as fixed-point */
-#define FIXED_POINT 1
+#define FLOATING_POINT 1
 
 /* Define to 1 if you have the <alloca.h> header file. */
 #define HAVE_ALLOCA_H 1

@@ -14,10 +14,13 @@
 /* #undef FIXED_DEBUG */
 
 /* Compile as fixed-point */
-#define FIXED_POINT */
+
+#ifndef FIXED_POINT
+#define FIXED_POINT 1
+#endif /* FIXED_POINT */
 
 /* Compile as floating-point */
-/* #undef FLOATING_POINT /**/
+/* #undef FLOATING_POINT */
 
 /* Float approximations */
 /* #undef FLOAT_APPROX */

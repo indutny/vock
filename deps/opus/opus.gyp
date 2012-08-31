@@ -8,7 +8,6 @@
       "type": "static_library",
       "defines": ["HAVE_CONFIG_H"],
       "include_dirs": [
-        "",
         "opus/include",
         "opus/src",
         "opus/celt",
@@ -122,6 +121,11 @@
         "opus/silk/stereo_quant_pred.c",
       ],
       "conditions": [
+        ["OS=='mac'", {
+          "include_dirs": [ "config/mac" ],
+        }, {
+          "include_dirs": [ "config/default" ],
+        }],
         ["opus_build_type=='fixed'", {
           "defines": ["FIXED_POINT"],
           "sources": [

@@ -64,6 +64,8 @@ Audio::Audio(double rate, size_t frame_size, ssize_t latency)
 
 Audio::~Audio() {
   uv_close(reinterpret_cast<uv_handle_t*>(&in_async_), NULL);
+  uv_close(reinterpret_cast<uv_handle_t*>(&inready_async_), NULL);
+  uv_close(reinterpret_cast<uv_handle_t*>(&outready_async_), NULL);
   delete unit_;
 }
 

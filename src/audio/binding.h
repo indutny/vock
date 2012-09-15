@@ -36,9 +36,9 @@ class Audio : public ObjectWrap {
   bool output_ready_;
   bool active_;
 
-  uv_async_t in_async_;
-  uv_async_t inready_async_;
-  uv_async_t outready_async_;
+  uv_async_t* in_async_;
+  uv_async_t* inready_async_;
+  uv_async_t* outready_async_;
 };
 
 } // namespace audio

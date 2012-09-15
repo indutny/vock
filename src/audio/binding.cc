@@ -38,34 +38,46 @@ Audio::Audio(double rate, size_t frame_size, ssize_t latency)
       input_ready_(false),
       output_ready_(false),
       active_(false) {
+  uv_async_t** handles[3] = { &in_async_, &inready_async_, &outready_async_ };
+  for (int i = 0; i < 3; i++) {
+    uv_async_t* handle = new uv_async_t();
+    handle->data = this;
+    *handles[i] = handle;
+  }
+
   // Setup async callbacks
-  if (uv_async_init(uv_default_loop(), &in_async_, InputAsyncCallback)) {
+  if (uv_async_init(uv_default_loop(), in_async_, InputAsyncCallback)) {
     abort();
   }
-  if (uv_async_init(uv_default_loop(), &inready_async_, InputReadyCallback)) {
+  if (uv_async_init(uv_default_loop(), inready_async_, InputReadyCallback)) {
     abort();
   }
-  if (uv_async_init(uv_default_loop(), &outready_async_, OutputReadyCallback)) {
+  if (uv_async_init(uv_default_loop(), outready_async_, OutputReadyCallback)) {
     abort();
   }
-  uv_unref(reinterpret_cast<uv_handle_t*>(&in_async_));
-  uv_unref(reinterpret_cast<uv_handle_t*>(&inready_async_));
-  uv_unref(reinterpret_cast<uv_handle_t*>(&outready_async_));
+  uv_unref(reinterpret_cast<uv_handle_t*>(in_async_));
+  uv_unref(reinterpret_cast<uv_handle_t*>(inready_async_));
+  uv_unref(reinterpret_cast<uv_handle_t*>(outready_async_));
 
   // Init Hardware abstraction layer's unit
   unit_ = new HALUnit(rate,
                       frame_size,
                       latency,
-                      &in_async_,
-                      &inready_async_,
-                      &outready_async_);
+                      in_async_,
+                      inready_async_,
+                      outready_async_);
+}
+
+
+void OnAsyncClose(uv_handle_t* handle) {
+  delete handle;
 }
 
 
 Audio::~Audio() {
-  uv_close(reinterpret_cast<uv_handle_t*>(&in_async_), NULL);
-  uv_close(reinterpret_cast<uv_handle_t*>(&inready_async_), NULL);
-  uv_close(reinterpret_cast<uv_handle_t*>(&outready_async_), NULL);
+  uv_close(reinterpret_cast<uv_handle_t*>(in_async_), OnAsyncClose);
+  uv_close(reinterpret_cast<uv_handle_t*>(inready_async_), OnAsyncClose);
+  uv_close(reinterpret_cast<uv_handle_t*>(outready_async_), OnAsyncClose);
   delete unit_;
 }
 
@@ -102,7 +114,7 @@ Handle<Value> Audio::Start(const Arguments& args) {
 
   a->unit_->Start();
 
-  uv_ref(reinterpret_cast<uv_handle_t*>(&a->in_async_));
+  uv_ref(reinterpret_cast<uv_handle_t*>(a->in_async_));
   a->Ref();
   a->active_ = true;
 
@@ -121,7 +133,7 @@ Handle<Value> Audio::Stop(const Arguments& args) {
 
   a->unit_->Stop();
 
-  uv_unref(reinterpret_cast<uv_handle_t*>(&a->in_async_));
+  uv_unref(reinterpret_cast<uv_handle_t*>(a->in_async_));
   a->Unref();
   a->input_ready_ = false;
   a->output_ready_ = false;
@@ -207,7 +219,7 @@ Handle<Value> Audio::ApplyGain(const Arguments& args) {
 
 void Audio::InputAsyncCallback(uv_async_t* async, int status) {
   HandleScope scope;
-  Audio* a = container_of(async, Audio, in_async_);
+  Audio* a = reinterpret_cast<Audio*>(async->data);
 
   Buffer* buffer;
   for (;;) {
@@ -224,7 +236,7 @@ void Audio::InputAsyncCallback(uv_async_t* async, int status) {
 
 void Audio::InputReadyCallback(uv_async_t* async, int status) {
   HandleScope scope;
-  Audio* a = container_of(async, Audio, inready_async_);
+  Audio* a = reinterpret_cast<Audio*>(async->data);
 
   a->input_ready_ = true;
 }
@@ -232,7 +244,7 @@ void Audio::InputReadyCallback(uv_async_t* async, int status) {
 
 void Audio::OutputReadyCallback(uv_async_t* async, int status) {
   HandleScope scope;
-  Audio* a = container_of(async, Audio, outready_async_);
+  Audio* a = reinterpret_cast<Audio*>(async->data);
 
   a->output_ready_ = true;
 }

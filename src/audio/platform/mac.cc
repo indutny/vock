@@ -163,15 +163,13 @@ PlatformUnit::PlatformUnit(Kind kind, double rate) : rate_(rate) {
   // Low latency = small buffer
   if (kind == kInputUnit) {
     uint32_t frame_size = input_rate_ / 100;
-    CHECK(AudioUnitSetProperty(unit_,
-                               kAudioDevicePropertyBufferFrameSize,
-                               kAudioUnitScope_Output,
-                               kInputBus,
-                               &frame_size,
-                               sizeof(frame_size)),
-          "Input: failed to set buffer frame size")
+    AudioUnitSetProperty(unit_,
+                         kAudioDevicePropertyBufferFrameSize,
+                         kAudioUnitScope_Output,
+                         kInputBus,
+                         &frame_size,
+                         sizeof(frame_size));
   }
-
 
   // Initialize Unit
   CHECK(AudioUnitInitialize(unit_), "Failed to initialize unit")

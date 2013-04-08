@@ -17,7 +17,7 @@
           'MACOSX_DEPLOYMENT_TARGET': '10.5',       # -mmacosx-version-min=10.5
           'USE_HEADERMAP': 'NO',
           'WARNING_CFLAGS': [
-            '-Wallx',
+            '-Wall',
             '-Wendif-labels',
             '-W',
             '-Wno-unused-parameter',

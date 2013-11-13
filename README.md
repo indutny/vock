@@ -2,6 +2,8 @@
 
 VoIP on node.js 0.8.x
 
+This application is a voice chat client you can use with [vock-server](https://github.com/indutny/vock-server).
+
 Join #vock on irc.freenode.net if you have any questions!
 
 ## Installing
